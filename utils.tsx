@@ -10,6 +10,10 @@ const ASCIIpunctuations = ['!', '"', '#', '$', '%', '&', "'", '(', ')', '*', '+'
 const extraPunctuationRegex = /^[\p{Pc}\p{Pd}\p{Pe}\p{Pf}\p{Pi}\p{Po}\p{Ps}]/u
 const testUnicodePunctuation = (ch: AbsChar) => ch !== null && (ch in ASCIIpunctuations || extraPunctuationRegex.test(ch))
 
+//
+export const asciiControlPattern = /^[\u0000-\u001F\u007F]/;
+
+
 // A left-flanking delimiter run is a delimiter run that is 
 // (1) not followed by Unicode whitespace, 
 // and either (2a) not followed by a Unicode punctuation character, or

@@ -32,13 +32,14 @@ export class DoublyLinkedList<T> {
 
   append(item: T) {
     const itemBeforeTail = this._tail.last
-    const newLinkedListItem = {
+    const newLinkedListItem: DoublyLinkedListItem<T> = {
       item,
       last: itemBeforeTail,
       next: this._tail
     }
     itemBeforeTail!.next = newLinkedListItem
     this._tail.last = newLinkedListItem
+    return newLinkedListItem
   }
 
   head(): DoublyLinkedListItem<T> | null {
@@ -58,4 +59,26 @@ export function removeItem<T>(item: DoublyLinkedListItem<T>) {
   item.last = null
   item.next = null
 }
+
+export function removeItems<T>(itemStart: DoublyLinkedListItem<T>, itemEnd: DoublyLinkedListItem<T>) {
+  const itemBefore = itemStart.last
+  const itemAfter = itemEnd.next
+  if (itemBefore) {
+    itemBefore.next = itemAfter
+  }
+  if (itemAfter) {
+    itemAfter.last = itemBefore
+  }
+  itemStart.next = null
+  itemEnd.last = null
+}
+
+export function detachBack<T>(item: DoublyLinkedListItem<T>) {
+  const itemAfter = item.next
+  item.next = null
+  if (!itemAfter) return
+  itemAfter.last = null
+}
+
+// export function detach
 

@@ -1,3 +1,5 @@
+import { DoublyLinkedList } from "./doublyLinkedList"
+
 export enum NodeType {
   TEXT,
   SOFT_LINE_BREAK,
@@ -25,5 +27,5 @@ export const linkTypes = [
 export interface Node {
   type: NodeType,
   raw: string,
-  children: Node[] | null
+  children: DoublyLinkedList<Node> | null
 }

@@ -1,8 +1,8 @@
 
 import { Node, NodeType, linkTypes } from "./Node"
-import { DoublyLinkedList, removeItem } from "./doublyLinkedList"
+import { DoublyLinkedList, DoublyLinkedListItem, removeItem } from "./doublyLinkedList"
 import { DelimiterStackItem } from "./DelimiterStack"
-import { getEmphasisDelimiterEffect } from "./utils"
+import { asciiControlPattern, getEmphasisDelimiterEffect } from "./utils"
 import { AbsChar } from "./common"
 
 
@@ -10,9 +10,14 @@ interface SharedState {
     textBuffer: string
     charBefore: AbsChar
     charAfter: AbsChar
-    nodeList: Node[]
+    nodeList: DoublyLinkedList<Node>
     delimiterStack: DoublyLinkedList<DelimiterStackItem>
     stackBottom?: DelimiterStackItem
+}
+
+interface ParseResult {
+    sliceLength: number
+    ok: boolean
 }
 
 function newState(): SharedState {
@@ -20,7 +25,7 @@ function newState(): SharedState {
         textBuffer: '',
         charBefore: null,
         charAfter: null,
-        nodeList: [],
+        nodeList: new DoublyLinkedList<Node>,
         delimiterStack: new DoublyLinkedList<DelimiterStackItem>,
         stackBottom: undefined 
     }
@@ -28,7 +33,7 @@ function newState(): SharedState {
 
 function flushTextBuffer(state: SharedState) {
     if (state.textBuffer) {
-        state.nodeList.push({
+        state.nodeList.append({
             type: NodeType.TEXT,
             raw: state.textBuffer,
             children: null
@@ -44,8 +49,8 @@ function pushTextNode(text: string, state: SharedState) {
         raw: text,
         children: null
     }
-    nodeList.push(node)
-    return node
+    const ptr = nodeList.append(node)
+    return ptr
 }
 
 function lookForLinkOrImage(state: SharedState): Node {
@@ -60,18 +65,21 @@ function lookForLinkOrImage(state: SharedState): Node {
         if (it.item.isActive) {
             let nodeType: NodeType = NodeType.UNKNOWN
             const ok = nodeType !== NodeType.UNKNOWN
-            let childrenRaw = ""
+
+
             if (ok) {
                 let raw = ""
-                const textNode = it.item.node
-                // TODO: optimization: find textNodeIdx without `indexOf` O(n)->O(1)
-                const textNodeIdx = nodeList.indexOf(textNode)
-                for (let i = textNodeIdx; i < nodeList.length; i++) {
-                    raw += nodeList[i].raw
+                let childrenRaw = ""
+                let nodeIt: DoublyLinkedListItem<Node> | null = it.item.nodePtr
+                raw += nodeIt.item.raw
+                
+                while (nodeIt) {
+                    childrenRaw += nodeIt.item.raw
+                    nodeIt = nodeIt.next
                 }
-                for (let i = textNodeIdx + 1; i < nodeList.length - 1; i++) {
-                    childrenRaw += nodeList[i].raw
-                }
+
+                raw += ']'
+                
                 state.stackBottom = it.item
                 const node: Node = {
                     type: nodeType,
@@ -89,7 +97,7 @@ function lookForLinkOrImage(state: SharedState): Node {
                         iit = iit.last
                     }
                 }
-                // TODO: should delete textNode?
+                removeItem(it.item.nodePtr)
                 removeItem(it)
                 return node
             } else {
@@ -117,11 +125,138 @@ function lookForLinkOrImage(state: SharedState): Node {
     }
 }
 
+
+// '![...] or [...]' should have been cut from raw
+function parseLinkOrImage(raw: string): ParseResult {
+    if (raw.startsWith('!')) raw = raw.slice(1)
+    let linkDestRaw: string | undefined = undefined // include <>, exclude outermost ()
+    let linkTitleRaw: string | undefined = undefined // exclude outermost quote or ()
+
+    let idx = 0
+
+    // link destination
+    
+    if (raw.startsWith('(<')) {
+
+        idx = 2
+
+        // skip spaces, tabs, and up to one line ending
+        while (idx < raw.length && raw.charAt(idx) in [' ', '\t']) idx++
+        if (raw.charAt(idx) === '\n') idx++
+        while (idx < raw.length && raw.charAt(idx) in [' ', '\t']) idx++
+
+
+        let charBefore = raw.charAt(idx - 1)
+        let ok = false
+        while (idx < raw.length) {
+            const currentChar = raw.charAt(idx)
+            // contains no line endings or unescaped < or > characters
+            if (currentChar === '\n') {
+                ok = false
+                break
+            } else if (charBefore !== '\\') {
+                if (currentChar === '<') {
+                    ok = false
+                    break
+                } else if (currentChar === '>') {
+                    ok = true
+                    break
+                }
+            }
+            idx++
+            charBefore = currentChar
+        }
+        if (ok) {
+            linkDestRaw = raw.slice(1, idx + 1)
+        }
+    } else if (raw.startsWith('(')) {
+        idx = 1
+
+        // skip spaces, tabs, and up to one line ending
+        while (idx < raw.length && raw.charAt(idx) in [' ', '\t']) idx++
+        if (raw.charAt(idx) === '\n') idx++
+        while (idx < raw.length && raw.charAt(idx) in [' ', '\t']) idx++
+
+        let charBefore = raw.charAt(idx - 1)
+        let ok = true
+        const parentheseStack: string[] = []
+
+        while (idx < raw.length) {
+            const currentChar = raw.charAt(idx)
+            if (currentChar in [' ', '\t', '\n']) {
+                break
+            }
+            if (charBefore !== '\\') {
+                if (currentChar === ')') {
+                    if (!parentheseStack.length) {
+                        ok = false
+                        break
+                    }
+                    parentheseStack.pop()
+                } else if (currentChar === '(') {
+                    parentheseStack.push('(')
+                }
+            } else if (asciiControlPattern.test(currentChar)) {
+                // does not include ASCII control characters or space character
+                ok = false
+                break
+            }
+            idx++
+            charBefore = currentChar
+        }
+        ok = ok && parentheseStack.length === 0
+        if (ok) {
+            linkDestRaw = raw.slice(1, idx)
+        }
+    }
+
+    if (linkDestRaw) {
+        // link title
+        while (idx < raw.length && raw.charAt(idx) in [' ', '\t']) idx++
+        if (raw.charAt(idx) === '\n') idx++
+        while (idx < raw.length && raw.charAt(idx) in [' ', '\t']) idx++
+        
+        if (idx + 1 < raw.length) {
+            const opener = raw.charAt(idx)
+            if (opener in ['"', "'"]) {
+                const startIdx = idx
+                idx++
+                let currentChar = raw.charAt(idx)
+                let charBefore = raw.charAt(idx - 1)
+                while (idx < raw.length) {
+                    if (charBefore !== '\\' && currentChar === opener) {
+                        linkTitleRaw = raw.slice(startIdx, idx + 1)
+                        break
+                    }
+                    charBefore = currentChar
+                    idx++
+                }
+            } else if (opener === '(') {
+                const startIdx = idx
+                idx++
+                let currentChar = raw.charAt(idx)
+                let charBefore = raw.charAt(idx - 1)
+                while (idx < raw.length) {
+                    if (charBefore !== '\\' && currentChar === ')') {
+                        linkTitleRaw = raw.slice(startIdx, idx + 1)
+                        break
+                    }
+                    charBefore = currentChar
+                    idx++
+                }
+            }
+        }
+
+    } else {
+        // shortcut link or invalid
+    }
+}
+
 function processEmphasis() {
 
 }
 
-function parseInlines(markdownRaw: string): Node[] {
+function parseInlines(markdownRaw: string): DoublyLinkedList<Node> {
     const sharedState = newState()
     let rawCopy = markdownRaw
     let charBefore: AbsChar = null
@@ -149,10 +284,10 @@ function parseInlines(markdownRaw: string): Node[] {
                     sharedState.textBuffer += delimiterRun
                 } else {
                     flushTextBuffer(sharedState)
-                    const node = pushTextNode(delimiterRun, sharedState)
+                    const nodePtr = pushTextNode(delimiterRun, sharedState)
                     delimiterStack.append({
                         type: currentChar,
-                        node,
+                        nodePtr,
                         isActive: true,
                         canOpen,
                         canClose,
@@ -160,19 +295,19 @@ function parseInlines(markdownRaw: string): Node[] {
                 }
             } else if (rawCopy.startsWith("![")) {
                 flushTextBuffer(sharedState)
-                const node = pushTextNode("![", sharedState)
+                const nodePtr = pushTextNode("![", sharedState)
                 delimiterStack.append({
                     type: "![",
-                    node,
+                    nodePtr,
                     isActive: true,
                 })
                 sliceLength = 2
             } else if (currentChar === '[' ) {
                 flushTextBuffer(sharedState)
-                const node = pushTextNode(currentChar, sharedState)
+                const nodePtr = pushTextNode(currentChar, sharedState)
                 delimiterStack.append({
                     type: "![",
-                    node,
+                    nodePtr,
                     isActive: true,
                 })
                 sliceLength = 1

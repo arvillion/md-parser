@@ -3,9 +3,9 @@ import { Node } from "./Node"
 
 export type DelimiterType = '![' | '[' | '*' | '_' 
 
-export interface DelimiterStackItem extends DoublyLinkedListItem {
+export interface DelimiterStackItem {
   type: DelimiterType
-  node: Node
+  nodePtr: DoublyLinkedListItem<Node>
   isActive?: boolean
   canOpen?: boolean // potential opener
   canClose?: boolean // potential closer
