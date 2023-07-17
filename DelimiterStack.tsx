@@ -9,6 +9,5 @@ export interface DelimiterStackItem extends DoublyLinkedListItem {
   isActive?: boolean
   canOpen?: boolean // potential opener
   canClose?: boolean // potential closer
-  startPos: number
 }
 

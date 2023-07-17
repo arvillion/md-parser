@@ -1,19 +1,26 @@
-export interface DoublyLinkedListItem {
-  next: DoublyLinkedListItem | null
-  last: DoublyLinkedListItem | null
+
+type NullItem = {}
+
+export interface DoublyLinkedListItem<T> {
+  next: DoublyLinkedListItem<T> | null
+  last: DoublyLinkedListItem<T> | null,
+  item: T
 }
 
-export class DoublyLinkedList<T extends DoublyLinkedListItem> {
-  _head: DoublyLinkedListItem // dummy head
-  _tail: DoublyLinkedListItem // dummy tail
+export class DoublyLinkedList<T> {
+  _head: DoublyLinkedListItem<T> // dummy head
+  _tail: DoublyLinkedListItem<T> // dummy tail
+
   constructor() {
+    // @ts-ignore
     this._head = {
       next: null,
-      last: null
+      last: null,
     }
+    // @ts-ignore
     this._tail = {
       next: null,
-      last: null
+      last: null,
     }
     this._head.next = this._tail
     this._tail.last = this._head
@@ -23,24 +30,27 @@ export class DoublyLinkedList<T extends DoublyLinkedListItem> {
     return this._head.next == this._tail
   }
 
-  append(newItem: T) {
+  append(item: T) {
     const itemBeforeTail = this._tail.last
-    newItem.last = itemBeforeTail
-    newItem.next = this._tail
-    itemBeforeTail!.next = newItem
-    this._tail.last = newItem
+    const newLinkedListItem = {
+      item,
+      last: itemBeforeTail,
+      next: this._tail
+    }
+    itemBeforeTail!.next = newLinkedListItem
+    this._tail.last = newLinkedListItem
   }
 
-  head() {
+  head(): DoublyLinkedListItem<T> | null {
     return this._head.next == this._tail ? null : this._head.next
   }
 
-  tail() {
+  tail(): DoublyLinkedListItem<T> | null {
     return this._head.next == this._tail ? null : this._tail.last
   }
 }
 
-export function removeItem<T extends DoublyLinkedListItem>(item: T) {
+export function removeItem<T>(item: DoublyLinkedListItem<T>) {
   const itemBefore = item.last
   const itemAfter = item.next
   itemBefore!.next = itemAfter
