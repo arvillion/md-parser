@@ -88,3 +88,46 @@ export function checkLastChar(char: string | null) {
   
   lastCharIsUnicodePunctuation = testUnicodePunctuation(char)
 }
+
+/**
+ * Normalizes a link or image label
+ * @param string link label without opening and closing brackets
+ */
+export function normalizeLinkLabel(label: string) {
+  label = label.toLowerCase()
+  let il = 0, ir = label.length - 1
+  const trimmedChars = [' ', '\t', '\n']
+  while (il < label.length && trimmedChars.includes(label.charAt(il))) il++
+  while (ir > 0 && trimmedChars.includes(label.charAt(ir))) ir--
+
+  label = label.slice(il, ir + 1)
+  const labelSlices: string[] = []
+  il = ir = 0
+  while (ir < label.length) {
+    const currentChar = label.charAt(ir)
+    if (trimmedChars.includes(currentChar)) {
+      labelSlices.push(label.slice(il, ir))
+      ir++
+      while (ir < label.length && trimmedChars.includes(label.charAt(ir))) ir++
+      il = ir
+    } else {
+      ir++
+    }
+  }
+  labelSlices.push(label.slice(il))
+  return labelSlices.join(' ')
+}
+
+// function normalizeLabel(label) {
+//   // Strip off opening and closing brackets
+//   // Unicode case fold
+//   label = label.toLowerCase();
+
+//   // Strip leading and trailing spaces, tabs, and line endings
+//   label = label.trim();
+
+//   // Collapse consecutive internal spaces, tabs, and line endings to a single space
+//   label = label.replace(/\s+/g, ' ');
+
+//   return label;
+// }

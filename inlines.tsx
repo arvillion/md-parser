@@ -2,9 +2,10 @@
 import { Node, NodeType, linkTypes } from "./Node"
 import { DoublyLinkedList, DoublyLinkedListItem, removeItem } from "./doublyLinkedList"
 import { DelimiterStackItem } from "./DelimiterStack"
-import { asciiControlPattern, getEmphasisDelimiterEffect } from "./utils"
+import { asciiControlPattern, getEmphasisDelimiterEffect, normalizeLinkLabel } from "./utils"
 import { AbsChar } from "./common"
 
+const labelMap = new Map<string, string>()
 
 interface SharedState {
     textBuffer: string
@@ -125,19 +126,31 @@ function lookForLinkOrImage(state: SharedState): Node {
     }
 }
 
+interface LinkOrImageParseResult extends ParseResult {
+    linkDestRaw?: string
+    linkTitleRaw?: string
+    nodeType?: NodeType
+}
 
 // '![...] or [...]' should have been cut from raw
-function parseLinkOrImage(raw: string): ParseResult {
-    if (raw.startsWith('!')) raw = raw.slice(1)
+function parseLinkOrImage(raw: string): LinkOrImageParseResult {
+    let isImage = false 
+    if (raw.startsWith('!')) {
+        raw = raw.slice(1)
+        isImage = true
+    }
+
+    let nodeType: NodeType = NodeType.UNKNOWN
     let linkDestRaw: string | undefined = undefined // include <>, exclude outermost ()
-    let linkTitleRaw: string | undefined = undefined // exclude outermost quote or ()
+    let linkTitleRaw: string | undefined = undefined // include outermost quote or ()
+    let linkLabelRaw: string | undefined = undefined // exclude outermost brackets
 
     let idx = 0
 
     // link destination
     
     if (raw.startsWith('(<')) {
-
+        nodeType = isImage ? NodeType.INLINE_IMAGE : NodeType.INLINE_LINK
         idx = 2
 
         // skip spaces, tabs, and up to one line ending
@@ -170,6 +183,7 @@ function parseLinkOrImage(raw: string): ParseResult {
             linkDestRaw = raw.slice(1, idx + 1)
         }
     } else if (raw.startsWith('(')) {
+        nodeType = isImage ? NodeType.INLINE_IMAGE : NodeType.INLINE_LINK
         idx = 1
 
         // skip spaces, tabs, and up to one line ending
@@ -208,6 +222,51 @@ function parseLinkOrImage(raw: string): ParseResult {
         if (ok) {
             linkDestRaw = raw.slice(1, idx)
         }
+    } else if (raw.startsWith('[')) {
+        idx++
+        let charBefore = '['
+        let ok = false
+        const startIdx = idx
+        // skip space, tab, or line ending
+        while (idx < raw.length && raw.charAt(idx) in [' ', '\t', '\n']) idx++
+
+        if (idx < raw.length && raw.charAt(idx) !== ']') {
+            // A link label can have at most 999 characters inside the square brackets.
+            while (idx < raw.length && (idx - startIdx) < 999) {
+                const currentChar = raw.charAt(idx)
+                if (charBefore !== '\\') {
+                    if (currentChar === ']') {
+                        ok = true
+                        break
+                    } else if (currentChar === '[') {
+                        ok = false
+                        break
+                    }
+                }
+                idx++
+                charBefore = currentChar
+            }
+            if (ok) {
+                linkLabelRaw = raw.slice(startIdx, idx)
+                const normalizedLabel = normalizeLinkLabel(linkLabelRaw)
+                if (!labelMap.has(normalizedLabel)) {
+                    return {
+                        sliceLength: 0,
+                        ok: false
+                    }
+                }
+                nodeType = isImage ? NodeType.FULL_REF_IMAGE : NodeType.FULL_REF_LINK
+                
+            } else {
+                return {
+                    sliceLength: 0,
+                    ok: false
+                }
+            }
+        } else {
+
+        }
+        
     }
 
     if (linkDestRaw) {
@@ -218,6 +277,7 @@ function parseLinkOrImage(raw: string): ParseResult {
         
         if (idx + 1 < raw.length) {
             const opener = raw.charAt(idx)
+            let ok = false
             if (opener in ['"', "'"]) {
                 const startIdx = idx
                 idx++
@@ -226,6 +286,7 @@ function parseLinkOrImage(raw: string): ParseResult {
                 while (idx < raw.length) {
                     if (charBefore !== '\\' && currentChar === opener) {
                         linkTitleRaw = raw.slice(startIdx, idx + 1)
+                        ok = true
                         break
                     }
                     charBefore = currentChar
@@ -239,15 +300,47 @@ function parseLinkOrImage(raw: string): ParseResult {
                 while (idx < raw.length) {
                     if (charBefore !== '\\' && currentChar === ')') {
                         linkTitleRaw = raw.slice(startIdx, idx + 1)
+                        ok = true
                         break
                     }
                     charBefore = currentChar
                     idx++
                 }
+            } else {
+                ok = true
+            }
+            if (!ok) {
+                return {
+                    sliceLength: 0,
+                    ok: false
+                }
             }
         }
 
-    } else {
+        if (linkTitleRaw) {
+            while (idx < raw.length && raw.charAt(idx) in [' ', '\t']) idx++
+            if (raw.charAt(idx) === '\n') idx++
+            while (idx < raw.length && raw.charAt(idx) in [' ', '\t']) idx++
+        }
+    } 
+
+    if (nodeType in [NodeType.INLINE_LINK, NodeType.INLINE_LINK]) {
+        if (raw.charAt(idx) === ')') {
+            return {
+                sliceLength: isImage ? idx + 2 : idx + 1,
+                ok: true,
+                linkDestRaw,
+                linkTitleRaw
+            }
+        } else {
+            return {
+                sliceLength: 0,
+                ok: false
+            }
+        }
+    }
+    
+    else {
         // shortcut link or invalid
     }
 }

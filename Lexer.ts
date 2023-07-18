@@ -111,35 +111,29 @@ export class Lexer {
     }
   }
 
-  function parseBlockquote(depth: number): {
-    braw: string,
+  parseBlockquote(depth: number): {
     children: DoublyLinkedList<Node>,
     depthBackTo: number 
   } {
-    const { _raw: raw } = this._raw
-    const list = new DoublyLinkedList()
-    const blockquotePattern = /(> )?(.*(?:\n|$))/y
+    const { _raw: raw } = this
+    const list = new DoublyLinkedList<Node>()
+    const blockquotePattern = /(> ?)(.*(?:\n|$))/y
 
     while (this._idx < raw.length) {
       const blockquotePatternResult = blockquotePattern.exec(raw)
       if (blockquotePatternResult) {
         const iraw = blockquotePatternResult[2]
 
-        // TODO: _idx confirm
         this._idx += blockquotePattern[1].length
 
         if (iraw.startsWith('>')) {  
-          const { braw, children, depthBackTo } = parseBlockquote(depth + 1)
-          const oldIdx = this._idx
+          const { children, depthBackTo } = this.parseBlockquote(depth + 1)
           list.append({
             type: NodeType.BLOCKQUOTE,
             children,
-            raw: braw
           })
           if (depthBackTo < depth) {
-            // TODO: verify whether braw is correct
             return {
-              braw: raw.slice(oldIdx, this._idx),
               children: list,
               depthBackTo
             }
@@ -150,72 +144,93 @@ export class Lexer {
           let rraw = blockquotePatternResult[2]
           this._idx = blockquotePattern.lastIndex
 
-          const arrowsPattern = /((?:> )*)(.*(?:\n|$))/y
+          const arrowsPattern = /((?:> ?)*)(.*(?:\n|$))/y
           const sameArrowNumBefore: number[] = []
+          const lineBeginIdxMap = new Map<number, number>()
+
+          let shouldReturn = false
 
           while (this._idx < raw.length) {
             arrowsPattern.lastIndex = this._idx
+            lineBeginIdxMap.set(rraw.length, this._idx)
             const arrowsPatternResult = arrowsPattern.exec(raw)
+            this._idx = arrowsPattern.lastIndex
+
+
             if (arrowsPatternResult) {
-              const arrowNum = arrowsPatternResult[1].trim().split(' ').length
+              const arrowNum = arrowsPatternResult[1].replace(' ', '').length
               if (arrowNum === maxMarkerNum) {
                 rraw += arrowsPatternResult[2]
               } else if (arrowNum < maxMarkerNum) {
-                sameArrowNumBefore.push(rraw.length + 1)
+                sameArrowNumBefore.push(rraw.length)
                 rraw += arrowsPatternResult[2]
               } else {
                 break
               }
             } else {
-              // TODO
               throw new Error('should not go here')
             }
           }
+          sameArrowNumBefore.push(rraw.length)
 
+          const firstSameBefore = sameArrowNumBefore[0]
           const ilexer = new Lexer(rraw)
           let oldIdx = 0
-          let block = ilexer.nextBlock()
 
-          let depthBackTo = maxMarkerNum
-
-          while (block) {
-            if (block.type === NodeType.PARAGRAPH) {
-              list.append(block)
-              while (sameArrowNumBefore.length && sameArrowNumBefore[0] <= ilexer._idx) {
-                sameArrowNumBefore.shift()
+          while (true) {
+            if (ilexer._idx < firstSameBefore) {
+              const block = ilexer.nextBlock()
+              if (!block) {
+                break
               }
-            } else {
-              if (!sameArrowNumBefore.length || ilexer._idx <= sameArrowNumBefore[0]) {
+              if (block.type === NodeType.PARAGRAPH) {
                 list.append(block)
+                while (sameArrowNumBefore[0] < ilexer._idx) {
+                  sameArrowNumBefore.shift()
+                }
               } else {
-                // rollback
-                ilexer._idx = oldIdx
-                ilexer._raw = ilexer._raw.slice(oldIdx, sameArrowNumBefore[0])
-                this._idx = sameArrowNumBefore[0]
+                if ( ilexer._idx <= firstSameBefore) {
+                  list.append(block)
+                } else {
+                  // rollback
+                  ilexer._idx = oldIdx
+                  ilexer._raw = ilexer._raw.slice(0, sameArrowNumBefore[0])
+
+                  //@ts-ignore
+                  this._idx = lineBeginIdxMap.get(sameArrowNumBefore[0])
+  
+                  shouldReturn = true
+                }
               }
+            } else {   
+              break
             }
             oldIdx = ilexer._idx
-            block = ilexer.nextBlock()
           }
-
-          const arrowsBeginPattern = /(?:> )*/y
-          arrowsBeginPattern.lastIndex = this._idx
-
-          const arrowsBeginPatternResult = arrowsBeginPattern.exec(raw)
+   
           
-
           if (shouldReturn) {
+            const arrowsBeginPattern = /(?:> )*/y
+            arrowsBeginPattern.lastIndex = this._idx
+
+            const arrowsBeginPatternResult = arrowsBeginPattern.exec(raw)
+
+            //@ts-ignore
+            const depthBackTo = arrowsBeginPatternResult[0].replace(' ', '').length - 1
+            this._idx = arrowsBeginPattern.lastIndex
             return {
-              braw:
               children: list,
               depthBackTo
             }
           }
           
-
         }
       }
     }
     
+    return {
+      children: list,
+      depthBackTo: depth - 1
+    }
   }
 }
