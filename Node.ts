@@ -54,6 +54,6 @@ export const atxTypes = [
 
 export interface Node {
   type: NodeType,
-  raw: string,
+  raw?: string,
   children: DoublyLinkedList<Node> | null
 }
