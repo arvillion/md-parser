@@ -1,5 +1,5 @@
 import { NodeType, Node } from "./Node"
-import { DoublyLinkedList } from "./doublyLinkedList"
+import { DoublyLinkedList } from "./DoublyLinkedList"
 
 const nodeList = new DoublyLinkedList<Node>
 

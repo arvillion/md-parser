@@ -1,4 +1,4 @@
-import { DoublyLinkedListItem } from "./doublyLinkedList"
+import { DoublyLinkedListItem } from "./DoublyLinkedList"
 import { Node } from "./Node"
 
 export type DelimiterType = '![' | '[' | '*' | '_' 

@@ -1,4 +1,4 @@
-import { DoublyLinkedList } from "./doublyLinkedList"
+import { DoublyLinkedList } from "./DoublyLinkedList"
 
 
 
@@ -27,11 +27,17 @@ export enum NodeType {
   ATX_HEADING_5,
   ATX_HEADING_6,
 
+  // setext headings
+  SETEXT_H1,
+  SETEXT_H2,
+
   CODE_FENCE_BLOCK,
+  IDENTED_CODE_BLOCK,
   
   BLOCKQUOTE,
 
-  PARAGRAPH
+  PARAGRAPH,
+  POTENTIAL_PARAGRAPH,
 
   UNKNOWN,
 }

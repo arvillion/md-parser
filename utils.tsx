@@ -131,3 +131,7 @@ export function normalizeLinkLabel(label: string) {
 
 //   return label;
 // }
+export interface Range {
+  begin: number, // including
+  end: number // including
+}
