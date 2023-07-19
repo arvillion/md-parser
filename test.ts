@@ -7,7 +7,7 @@ const testDownloadUrl = 'https://spec.commonmark.org/0.30/spec.json'
 const filePath = 'spec.json'
 
 let tc: any = null
-const caseNo = 83
+const caseNo = 96
 main()
 
 function runTestCase(caseNo: number) {
@@ -20,7 +20,7 @@ function runTestCase(caseNo: number) {
   }
   const raw = tcc.markdown
   console.log(`====== Test case #${caseNo} ======`)
-  console.log(`raw: ${JSON.stringify(raw)}`)
+  if(raw) console.log(`raw: ${JSON.stringify(raw)}`)
   console.log(`html: ${JSON.stringify(tcc.html)}`)
   const lexer = new Lexer(raw)
   const blocks: Node[] = []

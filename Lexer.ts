@@ -146,7 +146,7 @@ export class Lexer {
 
         thematicBreakPattern.lastIndex = this._idx
         if (thematicBreakPattern.test(raw)) {
-          this._idx = thematicBreakPattern.lastIndex + 1
+          this._idx = thematicBreakPattern.lastIndex
           const traw = raw.slice(this._idx, thematicBreakPattern.lastIndex)
           return {
             type: NodeType.THEMATIC_BREAK,
