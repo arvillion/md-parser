@@ -46,33 +46,18 @@ export class Lexer {
     }
 
     const oldIdx = this._idx
-    while (this._idx < raw.length && raw.charAt(this._idx) === ' ') this._idx++
+    while (this._idx < raw.length && raw.charAt(this._idx) === ' ') {
+      this._idx++
+    }
     const indentationNum = this._idx - oldIdx
 
     if (this._idx >= raw.length) {
       // TODO
       return null
     }
-    if (indentationNum < 3) {
+    if (indentationNum <= 3) {
 
       const firstChar = raw.charAt(this._idx)
-
-      // thematic break
-      if (['_', '*', '-'].includes(firstChar)) {
-        
-        const thematicBreakPattern = new RegExp(`(?:\\${firstChar}[\t ]*){3,}(?:\n|$)`, 'y')
-
-        thematicBreakPattern.lastIndex = this._idx
-        if (thematicBreakPattern.test(raw)) {
-          this._idx = thematicBreakPattern.lastIndex + 1
-          const traw = raw.slice(this._idx, thematicBreakPattern.lastIndex)
-          return {
-            type: NodeType.THEMATIC_BREAK,
-            raw: traw,
-            children: null
-          } 
-        }
-      }
 
       // atx heading
       const atxHeadingPattern = /(#{1,6})[ \t$]+(.*?)(?:[ \t]+#+[ \t]*)?$/y
@@ -141,7 +126,6 @@ export class Lexer {
       // setext headings
       // setext heading raw is excluded of underline(- or =)
       if (this._lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH) {
-        console.log(11)
         const setextHeadingPattern = /([=-])\1*[ \t]*(?:\n|$)/y
         setextHeadingPattern.lastIndex = this._idx
         if (setextHeadingPattern.test(raw)) {
@@ -154,6 +138,24 @@ export class Lexer {
           return this._nextBlock()
         }
       }
+
+      // thematic break
+      if (['_', '*', '-'].includes(firstChar)) {
+        
+        const thematicBreakPattern = new RegExp(`(?:\\${firstChar}[\t ]*){3,}(?:\n|$)`, 'y')
+
+        thematicBreakPattern.lastIndex = this._idx
+        if (thematicBreakPattern.test(raw)) {
+          this._idx = thematicBreakPattern.lastIndex + 1
+          const traw = raw.slice(this._idx, thematicBreakPattern.lastIndex)
+          return {
+            type: NodeType.THEMATIC_BREAK,
+            raw: traw,
+            children: null
+          } 
+        }
+      }
+
 
       // paragraph
       return this.parseParagraph(hasBlankLines)
