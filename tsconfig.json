@@ -2,7 +2,7 @@
   "files": [
     "Node.ts",
     "Lexer.ts",
-    "doublyLinkedList.ts",
+    "DoublyLinkedList.ts",
     "test.ts"
   ],
   "compilerOptions": {

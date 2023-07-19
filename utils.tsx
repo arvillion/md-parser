@@ -88,3 +88,8 @@ export function checkLastChar(char: string | null) {
   
   lastCharIsUnicodePunctuation = testUnicodePunctuation(char)
 }
+
+export interface Range {
+  begin: number, // including
+  end: number // including
+}

@@ -1,10 +1,22 @@
-import { DoublyLinkedList } from "./doublyLinkedList"
+import { DoublyLinkedList } from "./DoublyLinkedList"
 import { atxTypes, Node, NodeType } from "./Node"
+
+interface ParaQueueItem extends Range {
+  raw: string
+}
 
 export class Lexer {
   _raw: string
   _blocks: DoublyLinkedList<Node>
   _idx: number
+
+  // A line containing no characters, or a line containing only spaces (U+0020) or tabs (U+0009), is called a blank line.
+  _blankLinePattern = /[ \t]*(?:\n|$)/y
+  _paragraphPattern = /.*(?:\n|$)/y
+  _identedCodePattern = /     ?.*(?:\n|$)/y
+
+  // _paraQueue: ParaQueueItem[]
+  _lastBlock: Node | null = null
 
   constructor(raw: string) {
     this._idx = 0
@@ -13,14 +25,36 @@ export class Lexer {
   }
 
   nextBlock(): Node | null {
-    const { _raw: raw } = this
+    const block = this._nextBlock()
+    this._lastBlock = block
+    return block
+  }
+
+  _nextBlock(): Node | null {
+    const { 
+      _raw: raw,
+      _identedCodePattern: identedCodePattern
+    } = this
+    // console.log(this._idx, raw.length)
+    let hasBlankLines = false
+
+    // skip blank lines
+    this._blankLinePattern.lastIndex = this._idx
+    while (this._idx < raw.length && this._blankLinePattern.test(raw)) {
+      this._idx = this._blankLinePattern.lastIndex
+      hasBlankLines = true
+    }
+
+    const oldIdx = this._idx
     while (this._idx < raw.length && raw.charAt(this._idx) === ' ') this._idx++
-    const indentationNum = this._idx
+    const indentationNum = this._idx - oldIdx
+
     if (this._idx >= raw.length) {
       // TODO
       return null
     }
     if (indentationNum < 3) {
+
       const firstChar = raw.charAt(this._idx)
 
       // thematic break
@@ -80,6 +114,7 @@ export class Lexer {
           // console.log(codeRaw)
           // console.log(infoStr)
           // TODO: identation
+          // TODO: _idx
           return {
             type: NodeType.CODE_FENCE_BLOCK,
             raw: craw,
@@ -90,25 +125,82 @@ export class Lexer {
 
       // blockquotes
       if (firstChar === '>') {
-        const { raw, children } = parseBlockquote(0)
+        const { children } = this.parseBlockquote(0)
+        const startIdx = this._idx
         return {
           type: NodeType.BLOCKQUOTE,
-          raw,
+          raw: this._raw.slice(startIdx, this._idx),
           children
         }
       }
 
       // paragraph
-      i
+      return this.parseParagraph(hasBlankLines)
 
     } else {
-  
+      // idented code blocks
+      
+      if (!hasBlankLines && this._lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH) {
+        this._idx -= indentationNum
+        return this.parseParagraph(hasBlankLines)
+      }
+
+      this._idx -= indentationNum
+      let craw = ""
+
+      let backIdx = this._idx
+
+      const blankLinePattern = new RegExp(this._blankLinePattern)
+
+      while (true) {
+        let hasContent = false
+        this._identedCodePattern.lastIndex = this._idx
+        let startIdx = this._idx
+        while (this._identedCodePattern.test(raw)) {
+          hasContent = true
+          craw += raw.slice(startIdx + 4, this._identedCodePattern.lastIndex)
+          this._idx = this._identedCodePattern.lastIndex
+          startIdx = this._idx
+        }
+        if (hasContent) {
+          backIdx = this._idx
+          blankLinePattern.lastIndex = this._idx
+          while (this._idx < raw.length && blankLinePattern.test(raw)) {
+            craw += '\n'
+            this._idx = blankLinePattern.lastIndex
+          }
+        } else {
+          this._idx = backIdx
+          break
+        }
+      }
+      
+      return {
+        type: NodeType.IDENTED_CODE_BLOCK,
+        raw: craw, // indented code block raw is excluded of leading 4 spaces,
+        children: null
+      }
     }
-    return {
-      type: NodeType.UNKNOWN,
-      raw: '',
-      children: null
-    }
+
+  }
+
+  parseParagraph(hasBlankLines: boolean) {
+    const { _raw: raw } = this
+    this._paragraphPattern.lastIndex = this._idx
+    const result = this._paragraphPattern.exec(raw)
+    // @ts-ignore
+    const praw = result[0]
+    this._idx = this._paragraphPattern.lastIndex
+    if (this._lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH && !hasBlankLines) {
+      this._lastBlock.raw += praw
+      return this._nextBlock()
+    } else {
+      return {
+        type: NodeType.POTENTIAL_PARAGRAPH,
+        raw: praw,
+        children: null
+      }
+    }  
   }
 
   parseBlockquote(depth: number): {
@@ -124,7 +216,7 @@ export class Lexer {
       if (blockquotePatternResult) {
         const iraw = blockquotePatternResult[2]
 
-        this._idx += blockquotePattern[1].length
+        this._idx += blockquotePatternResult[1].length
 
         if (iraw.startsWith('>')) {  
           const { children, depthBackTo } = this.parseBlockquote(depth + 1)
@@ -140,13 +232,12 @@ export class Lexer {
           }
         } else {
 
-          // const maxMarkerNum = depth + 1
           let rraw = blockquotePatternResult[2]
           this._idx = blockquotePattern.lastIndex
           const lineBeginIdxMap = new Map<number, number>
 
           const arrowsPattern = /((?:> ?)*)(.*(?:\n|$))/y
-          const arrowNumStack = [depth + 1]
+          let arrowNumNow = depth + 1
 
           const sameArrowNumBefore: number[] = []
 
@@ -159,11 +250,10 @@ export class Lexer {
               lineBeginIdxMap.set(rraw.length, this._idx)
               this._idx = arrowsPattern.lastIndex
 
-              const minArrowNum = arrowNumStack[arrowNumStack.length - 1]
-              if (arrowNum === minArrowNum) {
+              if (arrowNum === arrowNumNow) {
                 rraw += arrowsPatternResult[2]
-              } else if (arrowNum < minArrowNum) {
-                arrowNumStack.push(arrowNum)
+              } else if (arrowNum < arrowNumNow) {
+                arrowNumNow = arrowNum
                 sameArrowNumBefore.push(rraw.length)
                 rraw += arrowsPatternResult[2]
               } else {
@@ -192,7 +282,12 @@ export class Lexer {
               } else {
                 if (block.type === NodeType.PARAGRAPH) {
                   list.append(block)
+
+                  //@ts-ignore
+                  this._idx = lineBeginIdxMap.get(ilexer._idx)
                   shouldReturn = true
+
+                  break
                 } else {
                   // rollback
                   while (sidx > 0 && sameArrowNumBefore[sidx] >= ilexer._idx) {
@@ -202,7 +297,7 @@ export class Lexer {
                   ilexer._raw = ilexer._raw.slice(0, sameArrowNumBefore[sidx])
 
                   // @ts-ignore
-                  this._idx = lineBeginIdxMap.get(sidx)
+                  this._idx = lineBeginIdxMap.get(sameArrowNumBefore[sidx])
 
                   shouldReturn = true
                 }
@@ -217,6 +312,7 @@ export class Lexer {
             arrowsBeginPattern.lastIndex = this._idx
             const arrowsBeginPatternResult = arrowsBeginPattern.exec(raw)
             if (arrowsBeginPatternResult) {
+              this._idx += arrowsBeginPatternResult[0].length
               const arrowNum =  arrowsBeginPatternResult[0].replace(/ /g, '').length
               return {
                 children: list,
