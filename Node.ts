@@ -27,6 +27,10 @@ export enum NodeType {
   ATX_HEADING_5,
   ATX_HEADING_6,
 
+  // setext headings
+  SETEXT_H1,
+  SETEXT_H2,
+
   CODE_FENCE_BLOCK,
   IDENTED_CODE_BLOCK,
   

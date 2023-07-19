@@ -1,26 +1,24 @@
 import { Lexer } from "./Lexer";
 import { NodeType } from "./Node";
 
-const content = `    chunk1
+const content = `Foo *bar*
+=========
 
-    chunk2
-
-
-
-      chunk3`
+Fooa *bar*
+---------`
 
 const lexer = new Lexer(content)
 
-console.log(NodeType)
+const blocks: any[] = []
 
-const result1 = lexer.nextBlock()
-const result2 = lexer.nextBlock()
+let block = lexer.nextBlock()
 
-// @ts-ignore
-// result1.type = NodeType[result1.type]
-// @ts-ignore
+while (block) {
+  blocks.push(block)
+  block = lexer.nextBlock()
+}
 
-// result2.type = NodeType[result2.type]
+for (let b of blocks) {
+  console.log(b)
+}
 
-
-console.log(result1, result2)

@@ -35,7 +35,7 @@ export class Lexer {
       _raw: raw,
       _identedCodePattern: identedCodePattern
     } = this
-    // console.log(this._idx, raw.length)
+    console.log(this._idx, raw.length)
     let hasBlankLines = false
 
     // skip blank lines
@@ -131,6 +131,27 @@ export class Lexer {
           type: NodeType.BLOCKQUOTE,
           raw: this._raw.slice(startIdx, this._idx),
           children
+        }
+      }
+
+      // TODO: list items
+
+
+
+      // setext headings
+      // setext heading raw is excluded of underline(- or =)
+      if (this._lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH) {
+        console.log(11)
+        const setextHeadingPattern = /([=-])\1*[ \t]*(?:\n|$)/y
+        setextHeadingPattern.lastIndex = this._idx
+        if (setextHeadingPattern.test(raw)) {
+          if (raw.startsWith('=')) {
+            this._lastBlock.type = NodeType.SETEXT_H1
+          } else {
+            this._lastBlock.type = NodeType.SETEXT_H2
+          }
+          this._idx = setextHeadingPattern.lastIndex
+          return this._nextBlock()
         }
       }
 
