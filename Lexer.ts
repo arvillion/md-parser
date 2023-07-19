@@ -60,14 +60,14 @@ export class Lexer {
       const firstChar = raw.charAt(this._idx)
 
       // atx heading
-      const atxHeadingPattern = /(#{1,6})[ \t$]+(.*?)(?:[ \t]+#+[ \t]*)?$/y
+      const atxHeadingPattern = /(#{1,6})[ \t$]+(.*?)(?:[ \t]+#+[ \t]*)?(?:$|\n)/y
       atxHeadingPattern.lastIndex = this._idx
       const atxHeadingPatternResult = atxHeadingPattern.exec(raw)
       if (atxHeadingPatternResult) {
         const type = atxTypes[(atxHeadingPatternResult[1].length - 1)]
         const contentRaw = atxHeadingPatternResult[2].replace(/^[\t ]|[\t g]$/g, '')
         const araw = raw.slice(this._idx, atxHeadingPattern.lastIndex)
-        this._idx = atxHeadingPattern.lastIndex + 1
+        this._idx = atxHeadingPattern.lastIndex
         // console.log(contentRaw)
         return {
           type,
