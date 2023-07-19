@@ -129,7 +129,7 @@ export class Lexer {
         const setextHeadingPattern = /([=-])\1*[ \t]*(?:\n|$)/y
         setextHeadingPattern.lastIndex = this._idx
         if (setextHeadingPattern.test(raw)) {
-          if (raw.startsWith('=')) {
+          if (raw.charAt(this._idx) === '=') {
             this._lastBlock.type = NodeType.SETEXT_H1
           } else {
             this._lastBlock.type = NodeType.SETEXT_H2
