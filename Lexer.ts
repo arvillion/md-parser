@@ -257,15 +257,12 @@ export class Lexer {
 
           let rraw = blockquotePatternResult[2]
           this._idx = blockquotePattern.lastIndex
-          const lineBeginIdxMap = new Map<number, number>
 
           const arrowsPattern = /((?:> ?)*)(.*(?:\n|$))/y
           let arrowNumNow = depth + 1
 
           const sameArrowNumBefore: number[] = []
           const lineBeginIdxMap = new Map<number, number>()
-
-          let shouldReturn = false
 
           while (this._idx < raw.length) {
             arrowsPattern.lastIndex = this._idx
