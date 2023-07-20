@@ -48,7 +48,7 @@ export class Lexer {
       _raw: raw,
       _identedCodePattern: identedCodePattern
     } = this
-    console.log(this._idx, raw.length)
+    // console.log(this._idx, raw.length)
     let hasBlankLines = false
 
     // skip blank lines
@@ -247,6 +247,10 @@ export class Lexer {
       }
 
       this._idx = currIdx + blk.raw.length
+
+      if (blk.type === NodeType.POTENTIAL_PARAGRAPH) {
+        blk.type = NodeType.PARAGRAPH
+      }
       // console.log(JSON.stringify(raw.slice(currIdx, currIdx + blk.raw.length)))
       return blk
     }  
@@ -261,11 +265,13 @@ export class Lexer {
     const blockquotePattern = /(> ?)(.*(?:\n|$))/y
 
     while (this._idx < raw.length) {
+      blockquotePattern.lastIndex = this._idx
       const blockquotePatternResult = blockquotePattern.exec(raw)
       if (blockquotePatternResult) {
         const iraw = blockquotePatternResult[2]
 
         this._idx += blockquotePatternResult[1].length
+        
 
         if (iraw.startsWith('>')) {  
           const { children, depthBackTo } = this.parseBlockquote(depth + 1)
@@ -284,7 +290,7 @@ export class Lexer {
           let rraw = blockquotePatternResult[2]
           this._idx = blockquotePattern.lastIndex
 
-          const arrowsPattern = /((?:> ?)*)(.*(?:\n|$))/y
+          const arrowsPattern = / {0,3}(((?:> ?)*)(.*(?:\n|$)))/y
           let arrowNumNow = depth + 1
 
           const sameArrowNumBefore: number[] = []
@@ -298,17 +304,17 @@ export class Lexer {
 
 
             if (arrowsPatternResult) {
-              const arrowNum = arrowsPatternResult[1].replace(/ /g, '').length
+              const arrowNum = arrowsPatternResult[2].replace(/ /g, '').length
 
               lineBeginIdxMap.set(rraw.length, this._idx)
               this._idx = arrowsPattern.lastIndex
 
               if (arrowNum === arrowNumNow) {
-                rraw += arrowsPatternResult[2]
+                rraw += arrowsPatternResult[3]
               } else if (arrowNum < arrowNumNow) {
                 arrowNumNow = arrowNum
                 sameArrowNumBefore.push(rraw.length)
-                rraw += arrowsPatternResult[2]
+                rraw += arrowsPatternResult[3]
               } else {
                 break
               }
@@ -325,6 +331,8 @@ export class Lexer {
           const firstSameArrowNumBefore = sameArrowNumBefore[0]
           let shouldReturn = false
 
+          console.log(JSON.stringify(rraw))
+
           const ilexer = new Lexer(rraw)
           while (true) {
             const oldIdx = ilexer._idx
@@ -339,7 +347,6 @@ export class Lexer {
               } else {
                 if (block.type === NodeType.PARAGRAPH) {
                   list.append(block)
-
                   //@ts-ignore
                   this._idx = lineBeginIdxMap.get(ilexer._idx)
                   shouldReturn = true
@@ -381,6 +388,8 @@ export class Lexer {
             
           }
         }
+      } else {
+        throw new Error('should not go here')
       }
     }
     return {
