@@ -7,7 +7,7 @@ const testDownloadUrl = 'https://spec.commonmark.org/0.30/spec.json'
 const filePath = 'spec.json'
 
 let tc: any = null
-const caseNo = 115
+const caseNo = 96
 main()
 
 function runTestCase(caseNo: number) {
@@ -20,18 +20,21 @@ function runTestCase(caseNo: number) {
   }
   const raw = tcc.markdown
   console.log(`====== Test case #${caseNo} ======`)
-  if(raw) console.log(`raw: ${JSON.stringify(raw)}`)
+  console.log(`raw: ${JSON.stringify(raw)}`)
   console.log(`html: ${JSON.stringify(tcc.html)}`)
   const lexer = new Lexer(raw)
   const blocks: Node[] = []
 
   let block: Node | null = null
 
+  // while (block = lexer.nextBlock()) {
+  //   blocks.push(block)
+  // }
+  // for (let b of blocks) {
+  //   printNode(b, 0)
+  // }
   while (block = lexer.nextBlock()) {
-    blocks.push(block)
-  }
-  for (let b of blocks) {
-    printNode(b, 0)
+    printNode(block, 0)
   }
 }
 
@@ -39,7 +42,7 @@ async function main() {
   
   if (!fs.existsSync(filePath)) {
     console.log("Downloading test cases from " + testDownloadUrl)
-    tc = await fetch(testDownloadUrl).then(res => res.json())
+    tc = await fetch(testDownloadUrl).then((res: { json: () => any; }) => res.json())
     console.log("Downloaded")
     fs.writeFileSync(filePath, JSON.stringify(tc), {
       flag: 'w',
@@ -62,7 +65,7 @@ async function main() {
 function printNode(nd: Node, depth = 0) {
   let { raw, children, type } = nd
   let typeName = NodeType[type]
-  console.log(`${'  '.repeat(depth)}[${typeName}] raw: ${JSON.stringify(raw)}`)
+  console.log(`${'  '.repeat(depth)}[${typeName}] ${raw ? 'raw: ' + JSON.stringify(raw) : ''}`)
   if (children) {
     let nod: DoublyLinkedListItem<Node> | null = children.head()
     while (nod && nod !== children._tail) {

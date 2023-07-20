@@ -18,6 +18,11 @@ export class Lexer {
   // _paraQueue: ParaQueueItem[]
   _lastBlock: Node | null = null
 
+  _cachedBlock: {
+    idx: number,
+    blk: Node | null
+  } | null = null
+
   constructor(raw: string) {
     this._idx = 0
     this._raw = raw
@@ -25,7 +30,15 @@ export class Lexer {
   }
 
   nextBlock(): Node | null {
-    const block = this._nextBlock()
+    let block: Node | null = null
+    if (this._cachedBlock) {
+      console.log('cached')
+      this._idx = this._cachedBlock.idx
+      block = this._cachedBlock.blk
+      this._cachedBlock = null
+    } else {
+      block = this._nextBlock()
+    }
     this._lastBlock = block
     return block
   }
@@ -124,16 +137,18 @@ export class Lexer {
 
 
       // setext headings
-      // setext heading raw is excluded of underline(- or =)
+      // setext heading raw includes underline(- or =)
       if (this._lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH) {
         const setextHeadingPattern = /([=-])\1*[ \t]*(?:\n|$)/y
         setextHeadingPattern.lastIndex = this._idx
-        if (setextHeadingPattern.test(raw)) {
-          if (raw.charAt(this._idx) === '=') {
+        const patternResult = setextHeadingPattern.exec(raw)
+        if (patternResult) {
+          if (patternResult[1] === '=') {
             this._lastBlock.type = NodeType.SETEXT_H1
           } else {
             this._lastBlock.type = NodeType.SETEXT_H2
           }
+          this._lastBlock.raw += patternResult[0]
           this._idx = setextHeadingPattern.lastIndex
           return this._nextBlock()
         }
@@ -213,16 +228,27 @@ export class Lexer {
     const result = this._paragraphPattern.exec(raw)
     // @ts-ignore
     const praw = result[0]
-    this._idx = this._paragraphPattern.lastIndex
     if (this._lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH && !hasBlankLines) {
+      this._idx = this._paragraphPattern.lastIndex
       this._lastBlock.raw += praw
       return this._nextBlock()
     } else {
-      return {
+      const blk = {
         type: NodeType.POTENTIAL_PARAGRAPH,
         raw: praw,
         children: null
       }
+      this._lastBlock = blk
+      const currIdx = this._idx 
+      this._idx = this._paragraphPattern.lastIndex
+      this._cachedBlock = {
+        blk: this._nextBlock(),
+        idx: this._idx 
+      }
+
+      this._idx = currIdx + blk.raw.length
+      // console.log(JSON.stringify(raw.slice(currIdx, currIdx + blk.raw.length)))
+      return blk
     }  
   }
 
