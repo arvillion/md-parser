@@ -7,7 +7,7 @@ const testDownloadUrl = 'https://spec.commonmark.org/0.30/spec.json'
 const filePath = 'spec.json'
 
 let tc: any = null
-const caseNo = 96
+const caseNo = 106
 main()
 
 function runTestCase(caseNo: number) {

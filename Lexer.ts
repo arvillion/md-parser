@@ -32,7 +32,7 @@ export class Lexer {
   nextBlock(): Node | null {
     let block: Node | null = null
     if (this._cachedBlock) {
-      console.log('cached')
+      // console.log('cached')
       this._idx = this._cachedBlock.idx
       block = this._cachedBlock.blk
       this._cachedBlock = null
@@ -138,7 +138,7 @@ export class Lexer {
 
       // setext headings
       // setext heading raw includes underline(- or =)
-      if (this._lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH) {
+      if (this._lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH && !hasBlankLines) {
         const setextHeadingPattern = /([=-])\1*[ \t]*(?:\n|$)/y
         setextHeadingPattern.lastIndex = this._idx
         const patternResult = setextHeadingPattern.exec(raw)
