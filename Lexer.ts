@@ -23,6 +23,10 @@ const containerExit: Node = {
   type: NodeType.CONTAINER_EXIT
 }
 
+const placeholder: Node = {
+  type: NodeType.UNKNOWN
+}
+
 export class Lexer {
   _raw: string
   _blocks: DoublyLinkedList<Node>
@@ -32,6 +36,7 @@ export class Lexer {
   _blankLinePattern = /[ \t]*(?:\n|$)/y
   _paragraphPattern = /.*(?:\n|$)/y
   _identedCodePattern = /     ?.*(?:\n|$)/y
+  _linePattern = /.*(?:\n|$)/y
 
   _lastBlock: Node | null = null
 
@@ -43,7 +48,7 @@ export class Lexer {
     this._blocks = new DoublyLinkedList()
   }
 
-  nextBlock(): Node | null {
+  nextBlock(): Node {
     let block: Node | null = null
     const { _cachedBlocks: cachedBlocks } = this
 
@@ -156,13 +161,17 @@ export class Lexer {
       _cachedBlocks: cachedBlocks
     } = this
 
-    const cache = cachedBlocks.shift()
-    if (cache) {
+    // console.log(this._idx)
+
+    if (cachedBlocks.length && cachedBlocks[0].node.type !== NodeType.UNKNOWN) {
+      // @ts-ignore
+      const cache: CachedBlock = cachedBlocks.shift()
       this._idx = cache.nextIdx
       return cache.node
     }
 
     const lineInfo = this._nextLine(contStack)
+    // console.log(lineInfo, contStack)
     
     if (!lineInfo) {
       return containerExit
@@ -174,26 +183,31 @@ export class Lexer {
 
     const currContStack = isPrefixOk ? contStack : contStack.slice(0, invalidContIdx - 1)
 
+    const alteredLineInfo: LineInfo = {
+      ...lineInfo,
+      isPrefixOk: true
+    }
+
     if (identNum < 4) {
       ret = this.parseAtxHeading() ||
             this.parseFencedCode(currContStack) ||
-            this.parseBlockquote(currContStack) ||
-            this.parseSetextHeading(lineInfo, currContStack) || 
+            this.parseBlockquote(alteredLineInfo, currContStack) ||
+            this.parseSetextHeading(alteredLineInfo, currContStack) || 
             this.parseThematicBreak() ||
-            this.parseParagraph(lineInfo, currContStack)
+            this.parseParagraph(alteredLineInfo, currContStack)
     } else {
       if (!hasBlankLineBefore && this._lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH) {
         this._idx -= identNum
-        ret = this.parseParagraph(lineInfo, currContStack)
+        ret = this.parseParagraph(alteredLineInfo, currContStack)
       } else {
-        ret = this.parseIdentedCode(lineInfo, currContStack)
+        ret = this.parseIdentedCode(alteredLineInfo, currContStack)
       }
     }
 
     if (isPrefixOk) {
       return ret
     } else {
-      if (ret?.type === NodeType.PARAGRAPH_CONTINUATION) {
+      if (ret.type === NodeType.PARAGRAPH_CONTINUATION) {
         return ret
       } else {
         if (ret) {
@@ -261,13 +275,18 @@ export class Lexer {
   }
 
   parseFencedCode(contStack: string[]): Node | null {
+    // TODO: identation
+    // TODO: multiple empty lines treated as a single blank line?
+    // TODO: empty lines ahead
     const { _raw: raw } = this
     const firstChar = raw.charAt(this._idx)
     const backtickLeadingFencePattern = /(`{3,})[ \t]*([^`]*?)[ \t]*(?:\n|$)/y
-    const tildeLeadingFencePattern = /(~{3,})[ \t]*(.*?)[ \t]*(\n|$)/y
+    const tildeLeadingFencePattern = /(~{3,})[ \t]*(.*?)[ \t]*(?:\n|$)/y
     if (firstChar === '~' || firstChar === '`') {
-      const patternResult = firstChar === '~' ? tildeLeadingFencePattern.exec(raw) : backtickLeadingFencePattern.exec(raw)
-      const lastIndex = firstChar === '~' ? tildeLeadingFencePattern.lastIndex : backtickLeadingFencePattern.lastIndex
+      const pattern = firstChar === '~' ? tildeLeadingFencePattern : backtickLeadingFencePattern
+      pattern.lastIndex = this._idx
+      const patternResult = pattern.exec(raw)
+      const lastIndex = pattern.lastIndex
       if (patternResult) {
         const leadingFence = patternResult[1]
         const infoStr = patternResult[2]
@@ -275,7 +294,7 @@ export class Lexer {
         this._idx = lastIndex
 
         // const closingFencePattern = new RegExp(`^ {0,3}${firstChar}{${leadingFence.length},}[\t ]*$`, 'gm')
-        const closingFencePattern = new RegExp(`^${firstChar}{${leadingFence.length},}[\t ]*(?:$|\n)`, 'y')
+        const closingFencePattern = new RegExp(`${firstChar}{${leadingFence.length},}[\t ]*(?:$|\n)`, 'y')
 
         let craw = ""
         let l = this._nextLine(contStack, false, false)
@@ -290,17 +309,15 @@ export class Lexer {
 
           closingFencePattern.lastIndex = this._idx
           if (identNum <= 3 && closingFencePattern.test(raw)) {
+            this._goToNextLine()
             break
           }
 
-          l = this._nextLine(contStack)
+          this._goToNextLine()
           craw += raw.slice(contentBeginIdx, this._idx)
+          l = this._nextLine(contStack)
         }
-        
-        // console.log(codeRaw)
-        // console.log(infoStr)
-        // TODO: identation
-        // TODO: _idx
+      
         return {
           type: NodeType.CODE_FENCE_BLOCK,
           raw: craw,
@@ -311,13 +328,14 @@ export class Lexer {
   }
 
   parseParagraph(lineInfo: LineInfo, contStack: string[]): Node {
-    const { _raw: raw, _lastBlock: lastBlock } = this
+    const { _raw: raw, _lastBlock: lastBlock, _cachedBlocks: cachedBlocks } = this
     const { hasBlankLineBefore } = lineInfo
     this._paragraphPattern.lastIndex = this._idx
     const result = this._paragraphPattern.exec(raw)
+    this._idx = this._paragraphPattern.lastIndex
     // @ts-ignore
     const praw = result[0]
-
+    
     if (!hasBlankLineBefore && lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH) {
       return {
         type: NodeType.PARAGRAPH_CONTINUATION,
@@ -332,11 +350,15 @@ export class Lexer {
       // children: null
     }
     this._lastBlock = block
-    this._idx = this._paragraphPattern.lastIndex
 
-    let nextBlk = null
-    if (nextBlk = this._nextBlock(contStack))
-    while (nextBlk?.type === NodeType.POTENTIAL_PARAGRAPH) {
+    const pl = {
+      node: placeholder,
+      nextIdx: -1
+    }
+    cachedBlocks.push(pl)
+
+    let nextBlk = this._nextBlock(contStack)
+    while (nextBlk.type === NodeType.PARAGRAPH_CONTINUATION) {
       block.raw += nextBlk.raw
       nextBlk = this._nextBlock(contStack)
     }
@@ -346,12 +368,15 @@ export class Lexer {
       block.type = NodeType.PARAGRAPH
     }
 
-    if (nextBlk) {
-      this._cachedBlocks.push({
-        node: nextBlk,
-        nextIdx: this._idx 
-      })
-    }
+    // cachedBlocks.push({
+    //   node: nextBlk,
+    //   nextIdx: this._idx 
+    // })
+    pl.node = nextBlk
+    pl.nextIdx = this._idx
+
+    // console.log(cachedBlocks)
+    
 
     return block
   }
@@ -376,7 +401,8 @@ export class Lexer {
     return null
   }
 
-  parseBlockquote(contStack: string[]): Node | null {
+  parseBlockquote(lineInfo: LineInfo, contStack: string[]): Node | null {
+    // TODO: #239 A block quote can be empty
     const { _raw: raw } = this
     const firstChar = raw.charAt(this._idx)
 
@@ -385,6 +411,10 @@ export class Lexer {
     }
 
     contStack.push('>')
+
+    // TODO: avoid repeated prefix checks
+    this._idx = lineInfo.lineBeginIdx
+    
     const list = new DoublyLinkedList<Node>()
     let block = this._nextBlock(contStack)
     while (block.type !== NodeType.CONTAINER_EXIT) {
@@ -403,14 +433,16 @@ export class Lexer {
 
   parseIdentedCode(lineInfo: LineInfo, contStack: string[]) {
     // idented code block cannot interrupt a paragraph
-    const { hasBlankLineBefore, identNum } = lineInfo
-    const { _blankLinePattern: blankLinePattern, _raw: raw } = this
+    const { hasBlankLineBefore, identNum} = lineInfo
+    const { _blankLinePattern: blankLinePattern, _raw: raw, _identedCodePattern: identedCodePattern } = this
 
     let craw = ""
     
     let lf : LineInfo | null = lineInfo
     this._idx -= identNum
     let backupIdx = this._idx
+
+    // console.log(this._idx)
 
     // TODO: regex-free optimization
     while (true) {
@@ -434,9 +466,9 @@ export class Lexer {
         break
       }
 
-      this._identedCodePattern.lastIndex = this._idx
 
-      while (lf?.isPrefixOk && this._identedCodePattern.test(raw)) {
+      identedCodePattern.lastIndex = this._idx
+      while (lf?.isPrefixOk && identedCodePattern.test(raw)) {
         ccraw += raw.slice(this._idx + 4, this._identedCodePattern.lastIndex)
         this._idx = this._identedCodePattern.lastIndex
         backupIdx = this._idx
@@ -445,6 +477,8 @@ export class Lexer {
 
       if (ccraw) {
         craw = craw + blanks + ccraw
+      } else {
+        break
       }
 
       if (!lf) {
@@ -458,142 +492,23 @@ export class Lexer {
       }
 
     }
+
+    // console.log(JSON.stringify(craw))
     
     return {
       type: NodeType.IDENTED_CODE_BLOCK,
       raw: craw, // indented code block raw is excluded of leading 4 spaces,
     }
   }
-
-    // const blockquotePattern = /(> ?)(.*(?:\n|$))/y    
-
-    // while (this._idx < raw.length) {
-    //   const blockquotePatternResult = blockquotePattern.exec(raw)
-    //   if (blockquotePatternResult) {
-    //     const iraw = blockquotePatternResult[2]
-
-    //     this._idx += blockquotePatternResult[1].length
-
-    //     if (iraw.startsWith('>')) {  
-    //       const { children, depthBackTo } = this.parseBlockquote(depth + 1)
-    //       list.append({
-    //         type: NodeType.BLOCKQUOTE,
-    //         children,
-    //       })
-    //       if (depthBackTo < depth) {
-    //         return {
-    //           children: list,
-    //           depthBackTo
-    //         }
-    //       }
-    //     } else {
-
-    //       let rraw = blockquotePatternResult[2]
-    //       this._idx = blockquotePattern.lastIndex
-
-    //       const arrowsPattern = /((?:> ?)*)(.*(?:\n|$))/y
-    //       let arrowNumNow = depth + 1
-
-    //       const sameArrowNumBefore: number[] = []
-    //       const lineBeginIdxMap = new Map<number, number>()
-
-    //       while (this._idx < raw.length) {
-    //         arrowsPattern.lastIndex = this._idx
-    //         lineBeginIdxMap.set(rraw.length, this._idx)
-    //         const arrowsPatternResult = arrowsPattern.exec(raw)
-    //         this._idx = arrowsPattern.lastIndex
-
-
-    //         if (arrowsPatternResult) {
-    //           const arrowNum = arrowsPatternResult[1].replace(/ /g, '').length
-
-    //           lineBeginIdxMap.set(rraw.length, this._idx)
-    //           this._idx = arrowsPattern.lastIndex
-
-    //           if (arrowNum === arrowNumNow) {
-    //             rraw += arrowsPatternResult[2]
-    //           } else if (arrowNum < arrowNumNow) {
-    //             arrowNumNow = arrowNum
-    //             sameArrowNumBefore.push(rraw.length)
-    //             rraw += arrowsPatternResult[2]
-    //           } else {
-    //             break
-    //           }
-    //         } else {
-    //           throw new Error('should not go here')
-    //         }
-    //       }
-    //       sameArrowNumBefore.push(rraw.length)
-
-    //       lineBeginIdxMap.set(rraw.length, this._idx)
-    //       sameArrowNumBefore.push(rraw.length)
-
-    //       let sidx = sameArrowNumBefore.length - 1
-    //       const firstSameArrowNumBefore = sameArrowNumBefore[0]
-    //       let shouldReturn = false
-
-    //       const ilexer = new Lexer(rraw)
-    //       while (true) {
-    //         const oldIdx = ilexer._idx
-    //         if (ilexer._idx < firstSameArrowNumBefore) {
-    //           let block = ilexer.nextBlock()
-    //           if (!block) break
-    //           if (ilexer._idx <= firstSameArrowNumBefore) {
-    //             list.append(block)
-    //             while (sameArrowNumBefore[0] < ilexer._idx) {
-    //               sameArrowNumBefore.shift()
-    //             }
-    //           } else {
-    //             if (block.type === NodeType.PARAGRAPH) {
-    //               list.append(block)
-
-    //               //@ts-ignore
-    //               this._idx = lineBeginIdxMap.get(ilexer._idx)
-    //               shouldReturn = true
-
-    //               break
-    //             } else {
-    //               // rollback
-    //               while (sidx > 0 && sameArrowNumBefore[sidx] >= ilexer._idx) {
-    //                 sidx--
-    //               }
-    //               ilexer._idx = oldIdx
-    //               ilexer._raw = ilexer._raw.slice(0, sameArrowNumBefore[sidx])
-
-    //               // @ts-ignore
-    //               this._idx = lineBeginIdxMap.get(sameArrowNumBefore[sidx])
-
-    //               shouldReturn = true
-    //             }
-    //           }
-    //         } else {
-    //           break
-    //         }
-    //       }
-
-    //       if (shouldReturn) {
-    //         const arrowsBeginPattern = /(?:> ?)*/y
-    //         arrowsBeginPattern.lastIndex = this._idx
-    //         const arrowsBeginPatternResult = arrowsBeginPattern.exec(raw)
-    //         if (arrowsBeginPatternResult) {
-    //           this._idx += arrowsBeginPatternResult[0].length
-    //           const arrowNum =  arrowsBeginPatternResult[0].replace(/ /g, '').length
-    //           return {
-    //             children: list,
-    //             depthBackTo: arrowNum - 1
-    //           }
-    //         } else {
-    //           throw new Error('should not go here')
-    //         }
-            
-    //       }
-    //     }
-    //   }
-    // }
-    // return {
-    //   children: list,
-    //   depthBackTo: depth - 1
-    // }
-  // }
   
+  
+  _goToNextLine() {
+    const { _raw: raw, _linePattern: linePattern } = this
+    linePattern.lastIndex = this._idx
+    if (linePattern.test(raw)) {
+      this._idx = linePattern.lastIndex
+    } else {
+      throw new Error('no line feed')
+    }
+  }
 }
