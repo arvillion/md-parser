@@ -35,9 +35,14 @@ export enum NodeType {
   IDENTED_CODE_BLOCK,
   
   BLOCKQUOTE,
+  BLOCKQUOTE_START,
+  BLOCKQUOTE_END,
 
   PARAGRAPH,
   POTENTIAL_PARAGRAPH,
+  PARAGRAPH_CONTINUATION,
+
+  CONTAINER_EXIT,
 
   UNKNOWN,
 }
@@ -61,5 +66,5 @@ export const atxTypes = [
 export interface Node {
   type: NodeType,
   raw?: string,
-  children: DoublyLinkedList<Node> | null
+  children?: DoublyLinkedList<Node>
 }
