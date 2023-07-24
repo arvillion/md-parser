@@ -104,7 +104,7 @@ export class Lexer {
       return null
     }
 
-    const lineBeginIdx = this._idx
+    let lineBeginIdx = this._idx
 
     let identNum = this._skipIdentation()
 
@@ -114,7 +114,7 @@ export class Lexer {
       isPrefixOk = checkResult.isPrefixOk
       invalidContIdx = checkResult.invalidContIdx
 
-      const currContStack = isPrefixOk ? contStack : contStack.slice(0, invalidContIdx - 1)
+      const currContStack = isPrefixOk ? contStack : contStack.slice(0, invalidContIdx)
 
       if (skipEmptyLines) {
 
@@ -130,9 +130,15 @@ export class Lexer {
             isPrefixAlwaysOk = false
             break
           }
+          blankLinePattern.lastIndex = this._idx
+          lineBeginIdx = this._idx
         }
 
         if (!isPrefixAlwaysOk) {
+          return null
+        }
+
+        if (this._idx >= raw.length) {
           return null
         }
 
@@ -223,11 +229,23 @@ export class Lexer {
       return containerExit
     }
 
-    const { identNum, isPrefixOk, invalidContIdx, hasBlankLineBefore, lineBeginIdx } = lineInfo
+    const { identNum, isPrefixOk, invalidContIdx, hasBlankLineBefore, rollbackIdx, hasEmptyLineBefore } = lineInfo
 
+    // if (!isPrefixOk && (hasEmptyLineBefore || hasBlankLineBefore)) {
+    //   const exitNum = contStack.length - invalidContIdx - 1
+    //   for (let i = 0; i < exitNum; i++) {
+    //     cachedBlocks.push({
+    //       node: containerExit,
+    //       nextIdx: this._idx
+    //     })
+    //   }
+    //   this._idx = rollbackIdx
+    //   return containerExit
+    // }
+    
     let ret: Node | null = null
 
-    const currContStack = isPrefixOk ? contStack : contStack.slice(0, invalidContIdx - 1)
+    const currContStack = isPrefixOk ? contStack : contStack.slice(0, invalidContIdx)
 
     const alteredLineInfo: LineInfo = {
       ...lineInfo,

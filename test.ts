@@ -7,7 +7,12 @@ const testDownloadUrl = 'https://spec.commonmark.org/0.30/spec.json'
 const filePath = 'spec.json'
 
 let tc: any = null
-const caseNo = 241
+const caseNo = 242
+
+let raw = `>> aaa
+>
+>> sss`
+
 main()
 
 function runTestCase(caseNo: number) {
@@ -39,6 +44,17 @@ function runTestCase(caseNo: number) {
   }
 }
 
+function runManualTest(raw: string) {
+  console.log(`raw: ${JSON.stringify(raw)}`)
+  const lexer = new Lexer(raw)
+  const blocks: Node[] = []
+  let block: Node = lexer.nextBlock()
+  while (block.type !== NodeType.CONTAINER_EXIT) {
+    printNode(block, 0)
+    block = lexer.nextBlock() 
+  }
+}
+
 async function main() {
   
   if (!fs.existsSync(filePath)) {
@@ -58,7 +74,11 @@ async function main() {
 
   try {
     console.log(NodeType)
-    runTestCase(caseNo)
+    if (raw) {
+      runManualTest(raw)
+    } else {
+      runTestCase(caseNo)
+    }
   } catch (e) {
     console.error(e)
   }
