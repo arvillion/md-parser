@@ -7,11 +7,9 @@ const testDownloadUrl = 'https://spec.commonmark.org/0.30/spec.json'
 const filePath = 'spec.json'
 
 let tc: any = null
-const caseNo = 242
+const caseNo = 248
 
-let raw = `>> aaa
->
->> sss`
+let raw = ''
 
 main()
 
@@ -89,7 +87,7 @@ function printNode(nd: Node, depth = 0) {
   let typeName = NodeType[type]
   console.log(`${'  '.repeat(depth)}[${typeName}] ${raw ? 'raw: ' + JSON.stringify(raw) : ''}`)
   if (children) {
-    let nod: DoublyLinkedListItem<Node> | null = children.head()
+    let nod: DoublyLinkedListItem<Node> | null = children.front()
     while (nod && nod !== children._tail) {
       printNode(nod.item, depth + 1)
       nod = nod.next
