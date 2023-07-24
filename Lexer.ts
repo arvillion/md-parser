@@ -9,7 +9,8 @@ interface CachedBlock {
 interface LineInfo {
   identNum: number
   blankLinesBefore: number,
-  hasBlankLineBefore: boolean
+  hasBlankLineBefore: boolean,
+  hasEmptyLineBefore: boolean
 
   invalidContIdx: number
   isPrefixOk: boolean
@@ -64,7 +65,17 @@ export class Lexer {
     return block
   }
 
-  _nextLine(contStack: string[], skipIdentation: boolean = true, skipBlankLines: boolean = true): LineInfo | null {
+  _nextLine({
+    contStack = [], 
+    skipIdentation = true, 
+    skipBlankLines = true,
+    skipEmptyLines = false
+  }: {
+    contStack?: string[]
+    skipIdentation?: boolean
+    skipBlankLines?: boolean
+    skipEmptyLines?: boolean
+  } = {}): LineInfo | null {
     // check whether the line prefix conforms the rules of current containers
 
     const { 
@@ -73,6 +84,7 @@ export class Lexer {
     } = this
 
     let hasBlankLineBefore = false
+    let hasEmptyLineBefore = false
     let invalidContIdx = 0
     let isPrefixOk = true
     let blankLinesBefore = 0
@@ -94,45 +106,40 @@ export class Lexer {
 
     const lineBeginIdx = this._idx
 
-    // calculate the number of spaces of identation
-    const oldIdx = this._idx
-    while (this._idx < raw.length && raw.charAt(this._idx) === ' ') {
-      this._idx++
-    }
-    let identNum = this._idx - oldIdx
+    let identNum = this._skipIdentation()
 
     if (identNum <= 3) {
       // check container prefix
-      if (contStack.length) {
-        for (; invalidContIdx < contStack.length; invalidContIdx++) {
-          const cont = contStack[invalidContIdx]
-          let shouldContinue = true
-          if (cont === '>') {
-            if (raw.charAt(this._idx) === '>') {
-              this._idx++
-              if (raw.charAt(this._idx) === ' ') {
-                this._idx++
-              }
-            } else {
-              shouldContinue = false
-            }
-          } else {
-            throw new Error(`${cont} container is currently not supported`)
-          }
+      const checkResult = this._checkPrefix(contStack)
+      isPrefixOk = checkResult.isPrefixOk
+      invalidContIdx = checkResult.invalidContIdx
 
-          if (!shouldContinue) {
-            isPrefixOk = false
+      const currContStack = isPrefixOk ? contStack : contStack.slice(0, invalidContIdx - 1)
+
+      if (skipEmptyLines) {
+
+        blankLinePattern.lastIndex = this._idx
+        let isPrefixAlwaysOk = true
+        while (this._idx < raw.length && blankLinePattern.test(raw)) {
+          hasEmptyLineBefore = true
+          this._idx = blankLinePattern.lastIndex
+          const backupIdx = this._idx
+          // TODO: not <= 3
+          if (!(this._skipIdentation() <= 3 && this._checkPrefix(currContStack))) {
+            this._idx = backupIdx
+            isPrefixAlwaysOk = false
             break
           }
         }
+
+        if (!isPrefixAlwaysOk) {
+          return null
+        }
+
       }
 
       // re-calculate the number of spaces of identation
-      const oldIdx = this._idx
-      while (this._idx < raw.length && raw.charAt(this._idx) === ' ') {
-        this._idx++
-      }
-      identNum = this._idx - oldIdx
+      identNum = this._skipIdentation()
 
     } else {
       isPrefixOk = contStack.length ? false : true
@@ -146,6 +153,7 @@ export class Lexer {
       identNum,
       hasBlankLineBefore,
       blankLinesBefore,
+      hasEmptyLineBefore,
 
       invalidContIdx,
       isPrefixOk,
@@ -153,6 +161,41 @@ export class Lexer {
       lineBeginIdx,
 
       rollbackIdx
+    }
+  }
+
+  _checkPrefix(contStack: string[]) {
+    const { 
+      _raw: raw,
+    } = this
+    let invalidContIdx = 0
+    let isPrefixOk = true
+    if (contStack.length) {
+      for (; invalidContIdx < contStack.length; invalidContIdx++) {
+        const cont = contStack[invalidContIdx]
+        let shouldContinue = true
+        if (cont === '>') {
+          if (raw.charAt(this._idx) === '>') {
+            this._idx++
+            if (raw.charAt(this._idx) === ' ') {
+              this._idx++
+            }
+          } else {
+            shouldContinue = false
+          }
+        } else {
+          throw new Error(`${cont} container is currently not supported`)
+        }
+
+        if (!shouldContinue) {
+          isPrefixOk = false
+          break
+        }
+      }
+    }
+    return {
+      isPrefixOk,
+      invalidContIdx
     }
   }
 
@@ -170,7 +213,10 @@ export class Lexer {
       return cache.node
     }
 
-    const lineInfo = this._nextLine(contStack)
+    const lineInfo = this._nextLine({ 
+      contStack,
+      skipEmptyLines: true
+    })
     // console.log(lineInfo, contStack)
     
     if (!lineInfo) {
@@ -297,7 +343,11 @@ export class Lexer {
         const closingFencePattern = new RegExp(`${firstChar}{${leadingFence.length},}[\t ]*(?:$|\n)`, 'y')
 
         let craw = ""
-        let l = this._nextLine(contStack, false, false)
+        let l = this._nextLine({
+          contStack, 
+          skipIdentation:false, 
+          skipBlankLines: false
+        })
         while (l) {
           const { isPrefixOk, identNum, rollbackIdx } = l
           if (!isPrefixOk) {
@@ -315,7 +365,7 @@ export class Lexer {
 
           this._goToNextLine()
           craw += raw.slice(contentBeginIdx, this._idx)
-          l = this._nextLine(contStack)
+          l = this._nextLine({ contStack })
         }
       
         return {
@@ -373,10 +423,7 @@ export class Lexer {
     //   nextIdx: this._idx 
     // })
     pl.node = nextBlk
-    pl.nextIdx = this._idx
-
-    // console.log(cachedBlocks)
-    
+    pl.nextIdx = this._idx    
 
     return block
   }
@@ -453,7 +500,11 @@ export class Lexer {
       while (lf?.isPrefixOk && this._idx < raw.length && blankLinePattern.test(raw)) {
         blanks += '\n'
         this._idx = blankLinePattern.lastIndex
-        lf = this._nextLine(contStack, false, false)
+        lf = this._nextLine({
+          contStack, 
+          skipIdentation: false, 
+          skipBlankLines: false
+        })
       }
 
       if (!lf) {
@@ -472,7 +523,11 @@ export class Lexer {
         ccraw += raw.slice(this._idx + 4, this._identedCodePattern.lastIndex)
         this._idx = this._identedCodePattern.lastIndex
         backupIdx = this._idx
-        lf = this._nextLine(contStack, false, false)
+        lf = this._nextLine({
+          contStack, 
+          skipIdentation: false, 
+          skipBlankLines: false
+        })
       }
 
       if (ccraw) {
@@ -492,15 +547,13 @@ export class Lexer {
       }
 
     }
-
-    // console.log(JSON.stringify(craw))
     
     return {
       type: NodeType.IDENTED_CODE_BLOCK,
       raw: craw, // indented code block raw is excluded of leading 4 spaces,
     }
   }
-  
+
   
   _goToNextLine() {
     const { _raw: raw, _linePattern: linePattern } = this
@@ -510,5 +563,19 @@ export class Lexer {
     } else {
       throw new Error('no line feed')
     }
+  }
+
+  /**
+   * Skips leading spaces
+   * @returns the number of identation spaces
+   */
+  _skipIdentation(): number {
+    const { _raw: raw } = this
+    const oldIdx = this._idx
+    while (this._idx < raw.length && raw.charAt(this._idx) === ' ') {
+      this._idx++
+    }
+    let identNum = this._idx - oldIdx
+    return identNum
   }
 }
