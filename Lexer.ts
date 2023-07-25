@@ -64,7 +64,7 @@ export class Lexer {
       if (it.value.length === 1) {
         this._cachedBlocks = it.remove()
       } else {
-        it.update(it.value.slice(1))
+        this._cachedBlocks = it.update(it.value.slice(1))
       }
       return {
         node: ret,
@@ -210,14 +210,9 @@ export class Lexer {
   }
 
   _nextBlock(contStack: string[], lastBlock: Node | null): Node {
-    const { 
-      _cachedBlocks: cachedBlocks
-    } = this
 
-    // console.log(this._idx)
     const cache = this._getCache()
     if (cache) {
-      // this._idx = cache.nextIdx
       return cache.node
     }
 
@@ -264,11 +259,11 @@ export class Lexer {
             this.parseBlockquote(alteredLineInfo, currContStack) ||
             this.parseSetextHeading(alteredLineInfo, currContStack, currLastBlock) || 
             this.parseThematicBreak() ||
-            this.parseParagraph(alteredLineInfo, currContStack, currLastBlock)
+            this.parseParagraph(alteredLineInfo, currContStack, lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH)
     } else {
-      if (currLastBlock?.type === NodeType.POTENTIAL_PARAGRAPH) {
+      if (lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH) {
         this._idx -= identNum
-        ret = this.parseParagraph(alteredLineInfo, currContStack, currLastBlock)
+        ret = this.parseParagraph(alteredLineInfo, currContStack, true)
       } else {
         ret = this.parseIdentedCode(alteredLineInfo, currContStack)
       }
@@ -403,7 +398,7 @@ export class Lexer {
     return null
   }
 
-  parseParagraph(lineInfo: LineInfo, contStack: string[], lastBlock: Node | null): Node {
+  parseParagraph(lineInfo: LineInfo, contStack: string[], isLastNodePara: boolean): Node {
     const { _raw: raw } = this
     this._paragraphPattern.lastIndex = this._idx
     const result = this._paragraphPattern.exec(raw)
@@ -411,7 +406,7 @@ export class Lexer {
     // @ts-ignore
     const praw = result[0]
     
-    if (lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH) {
+    if (isLastNodePara) {
       return {
         type: NodeType.PARAGRAPH_CONTINUATION,
         raw: praw,
