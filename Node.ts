@@ -44,6 +44,8 @@ export enum NodeType {
 
   CONTAINER_EXIT,
 
+  BLANK_LINE,
+
   UNKNOWN,
 }
 
