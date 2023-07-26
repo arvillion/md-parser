@@ -31,6 +31,8 @@ const blankLine: Node = {
   type: NodeType.BLANK_LINE
 }
 
+type MarkerType = '-' | '+' | '*' | '.' | ')'
+
 export class Lexer {
   _raw: string
   _blocks: DoublyLinkedList<Node>
@@ -107,10 +109,12 @@ export class Lexer {
 
   _nextLine({
     contStack = [], 
-    skipIdentation = true
+    skipIdentation = true,
+    skipInitialPrefixCheck = false
   }: {
     contStack?: string[]
     skipIdentation?: boolean
+    skipInitialPrefixCheck?: boolean
   } = {}): LineInfo | null {
 
     
@@ -127,20 +131,32 @@ export class Lexer {
     let isBlankLine = false
     let blankLines = 0
     let lineBeginIdx = this._idx
-    let identNum = this._skipIdentation()
+    let identNum = 0
 
-    if (identNum <= 3) {
-      // check container prefix
+    if (!skipInitialPrefixCheck) {
       const checkResult = this._checkPrefix(contStack)
       isPrefixOk = checkResult.isPrefixOk
       invalidContIdx = checkResult.invalidContIdx
-
-      // re-calculate the number of spaces of identation
-      identNum = this._skipIdentation()
-
-    } else {
-      isPrefixOk = contStack.length ? false : true
+      identNum = this._skipIndentation()
     }
+
+    // if (identNum <= 3) {
+    //   if (!skipInitialPrefixCheck) {
+    //     // check container prefix
+    //     const checkResult = this._checkPrefix(contStack)
+    //     isPrefixOk = checkResult.isPrefixOk
+    //     invalidContIdx = checkResult.invalidContIdx
+    //   }
+      
+    //   // re-calculate the number of spaces of identation
+    //   identNum = this._skipIndentation()
+
+    // } else {
+    //   isPrefixOk = contStack.length ? false : true
+
+    //   // TODO: remove following lines
+    //   if (skipInitialPrefixCheck) throw new Error('not allowed')
+    // }
 
     if (!skipIdentation) {
       this._idx -= identNum
@@ -154,7 +170,7 @@ export class Lexer {
       isBlankLine = true
       this._idx = blankLinePattern.lastIndex
       finalIdx = blankLinePattern.lastIndex
-      this._skipIdentation()
+      this._skipIndentation()
       if (!this._checkPrefix(currContStack).isPrefixOk) {
         break
       }
@@ -180,21 +196,28 @@ export class Lexer {
     } = this
     let invalidContIdx = 0
     let isPrefixOk = true
+    // TODO: do not invoke skipIndentation before _checkPrefix
+
+    const arrowPattern = / {0,3}> ?/y
+
     if (contStack.length) {
       for (; invalidContIdx < contStack.length; invalidContIdx++) {
         const cont = contStack[invalidContIdx]
         let shouldContinue = true
         if (cont === '>') {
-          if (raw.charAt(this._idx) === '>') {
-            this._idx++
-            if (raw.charAt(this._idx) === ' ') {
-              this._idx++
-            }
+          arrowPattern.lastIndex = this._idx
+          if (arrowPattern.test(raw)) {
+            this._idx = arrowPattern.lastIndex
           } else {
             shouldContinue = false
           }
         } else {
-          throw new Error(`${cont} container is currently not supported`)
+          // spaces
+          if (raw.slice(this._idx).startsWith(cont)) {
+            this._idx += cont.length
+          } else {
+            shouldContinue = false
+          }
         }
 
         if (!shouldContinue) {
@@ -203,13 +226,14 @@ export class Lexer {
         }
       }
     }
+
     return {
       isPrefixOk,
       invalidContIdx
     }
   }
 
-  _nextBlock(contStack: string[], lastBlock: Node | null): Node {
+  _nextBlock(contStack: string[], lastBlock: Node | null, skipInitialPrefixCheck: boolean = false): Node {
 
     const cache = this._getCache()
     if (cache) {
@@ -218,6 +242,7 @@ export class Lexer {
 
     const lineInfo = this._nextLine({ 
       contStack,
+      skipInitialPrefixCheck
     })    
     if (!lineInfo) {
       const cac = []
@@ -259,6 +284,7 @@ export class Lexer {
             this.parseBlockquote(alteredLineInfo, currContStack) ||
             this.parseSetextHeading(alteredLineInfo, currContStack, currLastBlock) || 
             this.parseThematicBreak() ||
+            this.parseList(alteredLineInfo, currContStack, lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH ) ||
             this.parseParagraph(alteredLineInfo, currContStack, lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH)
     } else {
       if (lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH) {
@@ -291,6 +317,125 @@ export class Lexer {
       }
     
     }
+  }
+
+  parseList(lineInfo: LineInfo, contStack: string[], isLastNodePara: boolean): Node | null {
+    // TODO: loose or tight
+    // TODO: start number
+    const unorderedListMarkerPattern = /([-+*]) /y
+    const orderedListMarkerPattern = /(\d{1,9})([.)]) /y
+    const { _raw: raw, _blankLinePattern: blankLinePattern } = this
+
+    const children = new DoublyLinkedList<Node>
+
+    unorderedListMarkerPattern.lastIndex = this._idx
+    orderedListMarkerPattern.lastIndex = this._idx
+
+    const uListMarkerResult = unorderedListMarkerPattern.exec(raw)
+    const oListMarkerResult = orderedListMarkerPattern.exec(raw)
+
+    let marker: MarkerType | null = null
+    let type: NodeType | null = null
+
+    if (uListMarkerResult) {
+      // @ts-ignore
+      marker = uListMarkerResult[1]
+      type = NodeType.UNORDERED_LIST
+
+    } else if (oListMarkerResult) {
+      const digits = oListMarkerResult[1]
+      // when it starts on a line that would otherwise count as paragraph continuation text—then 
+      // and the list item is ordered, the start number must be 1.
+      if (!(isLastNodePara && digits !== '1')) {
+        // @ts-ignore
+        marker = oListMarkerResult[2]
+        type = NodeType.ORDERED_LIST
+      }
+    }
+
+    if (!type || !marker) return null
+
+    // an empty list item cannot interrupt a paragraph
+    blankLinePattern.lastIndex = uListMarkerResult ? unorderedListMarkerPattern.lastIndex : orderedListMarkerPattern.lastIndex
+    if (isLastNodePara && blankLinePattern.test(raw)) {
+      return null
+    }
+    
+    let block = null
+      while (block = this.parseListItem(marker, lineInfo, contStack)) {
+        children.pushBack(block)
+    }
+
+    return {
+      type,
+      children
+    }
+
+  }
+
+  parseListItem(type: MarkerType, lineInfo: LineInfo, contStack: string[]): Node | null {
+    const { _raw: raw, _blankLinePattern: blankLinePattern } = this
+    let pattern = null
+    if (type === '+' || type === '-' || type === '*') {
+      pattern = new RegExp(`\\${type}`, 'y')
+    } else {
+      pattern = new RegExp(`\d{1,9}\\${type}`, 'y')
+    }
+
+    const identNum = lineInfo.identNum
+    const children = new DoublyLinkedList<Node>
+
+    pattern.lastIndex = this._idx
+    const patternResult = pattern.exec(raw)
+
+    let isListItemFound = false
+    let startsWithBlankLine = false
+
+    if (!patternResult) return null
+    const markerLen = patternResult[0].length
+
+    blankLinePattern.lastIndex = pattern.lastIndex
+    if (blankLinePattern.test(raw)) {
+      // Item starting with a blank line
+      contStack.push(" ".repeat(identNum + markerLen + 1))
+      this._idx = blankLinePattern.lastIndex
+      isListItemFound = true
+      startsWithBlankLine = false
+    } else {
+      const spaceNum = this._skipIndentation()
+      if (spaceNum) {
+        isListItemFound = true
+        startsWithBlankLine = true
+        if (spaceNum <= 4) {
+          // Basic case
+          contStack.push(" ".repeat(identNum + markerLen + spaceNum))
+          this._idx += markerLen + spaceNum
+        } else {
+          // Item starting with indented code
+          contStack.push(" ".repeat(identNum + markerLen + 1))
+          this._idx += markerLen + 1
+        }
+      }
+    }
+
+    if (!isListItemFound) return null
+
+    let block = this._nextBlock(contStack, null, !startsWithBlankLine)
+    if (!(startsWithBlankLine && block.type === NodeType.BLANK_LINE)) {
+      while (block.type !== NodeType.CONTAINER_EXIT) {
+        children.pushBack(block)
+
+        // TODO: no skip identation
+        block = this._nextBlock(contStack, block)
+      }
+    }
+    
+    contStack.pop()
+
+    return {
+      type: NodeType.LIST_ITEM,
+      children
+    }  
   }
 
   parseAtxHeading(): Node | null {
@@ -578,13 +723,21 @@ export class Lexer {
    * Skips leading spaces
    * @returns the number of identation spaces
    */
-  _skipIdentation(): number {
+  _skipIndentation(max?: number): number {
     const { _raw: raw } = this
-    const oldIdx = this._idx
-    while (this._idx < raw.length && raw.charAt(this._idx) === ' ') {
-      this._idx++
+
+    let indentNum = 0
+    if (max) {
+      while (indentNum < max && this._idx < raw.length && raw.charAt(this._idx) === ' ') {
+        this._idx++
+        indentNum++
+      }
+    } else {
+      while (this._idx < raw.length && raw.charAt(this._idx) === ' ') {
+        this._idx++
+        indentNum++
+      }
     }
-    let identNum = this._idx - oldIdx
-    return identNum
+    return indentNum
   }
 }

@@ -9,7 +9,8 @@ const filePath = 'spec.json'
 let tc: any = null
 const caseNo = 228
 
-let raw = ''
+let raw = `>    > saasas
+> > ass`
 
 main()
 
