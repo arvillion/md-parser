@@ -7,10 +7,9 @@ const testDownloadUrl = 'https://spec.commonmark.org/0.30/spec.json'
 const filePath = 'spec.json'
 
 let tc: any = null
-const caseNo = 228
+const caseNo = 278
 
-let raw = `>    > saasas
-> > ass`
+let raw = ``
 
 main()
 

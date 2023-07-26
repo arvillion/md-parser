@@ -78,6 +78,7 @@ export class Lexer {
   }
 
   _storeCache(key: number, ...items: Node[]) {
+    if (!items.length) return
     const { _cachedBlocks: cachedBlocks } = this
     const it = cachedBlocks.get(key)
     if (it) {
@@ -136,27 +137,9 @@ export class Lexer {
     if (!skipInitialPrefixCheck) {
       const checkResult = this._checkPrefix(contStack)
       isPrefixOk = checkResult.isPrefixOk
-      invalidContIdx = checkResult.invalidContIdx
-      identNum = this._skipIndentation()
+      invalidContIdx = checkResult.invalidContIdx 
     }
-
-    // if (identNum <= 3) {
-    //   if (!skipInitialPrefixCheck) {
-    //     // check container prefix
-    //     const checkResult = this._checkPrefix(contStack)
-    //     isPrefixOk = checkResult.isPrefixOk
-    //     invalidContIdx = checkResult.invalidContIdx
-    //   }
-      
-    //   // re-calculate the number of spaces of identation
-    //   identNum = this._skipIndentation()
-
-    // } else {
-    //   isPrefixOk = contStack.length ? false : true
-
-    //   // TODO: remove following lines
-    //   if (skipInitialPrefixCheck) throw new Error('not allowed')
-    // }
+    identNum = this._skipIndentation()
 
     if (!skipIdentation) {
       this._idx -= identNum
@@ -245,23 +228,32 @@ export class Lexer {
       skipInitialPrefixCheck
     })    
     if (!lineInfo) {
-      const cac = []
-      for (let i = 0; i < contStack.length; i++) {
-        cac.push(containerExit)
-      }
+      // end of raw
+      const cac = Array(contStack.length).fill(containerExit)
       if (cac.length) this._storeCache(this._idx, ...cac)
       return containerExit
     }
-    const { identNum, isPrefixOk, invalidContIdx, isBlankLine } = lineInfo
 
+    const { identNum, isPrefixOk, invalidContIdx, isBlankLine } = lineInfo
 
     if (isBlankLine) {
       if (!isPrefixOk) {
-        const exitNum = contStack.length - invalidContIdx - 1
-        for (let i = 0; i < exitNum; i++) {
-          this._storeCache(this._idx, containerExit)
+        // A list item may contain blocks that are separated by more than one blank line
+        
+        // TODO: indexOf
+        // TODO: lastIndexOf?
+        let firstArrowIdx = invalidContIdx
+        while (firstArrowIdx < contStack.length && contStack[firstArrowIdx] !== '>') {
+          firstArrowIdx++
         }
-        return containerExit
+        if (firstArrowIdx < contStack.length) {
+          const cac = Array(contStack.length - firstArrowIdx - 1).fill(containerExit)
+          if (cac.length) this._storeCache(this._idx, ...cac)
+          return containerExit
+        } else {
+          return blankLine
+        }
+
       } else {
         return blankLine
       }
@@ -322,7 +314,7 @@ export class Lexer {
   parseList(lineInfo: LineInfo, contStack: string[], isLastNodePara: boolean): Node | null {
     // TODO: loose or tight
     // TODO: start number
-    const unorderedListMarkerPattern = /([-+*]) /y
+    const unorderedListMarkerPattern = /([-+*])/y
     const orderedListMarkerPattern = /(\d{1,9})([.)]) /y
     const { _raw: raw, _blankLinePattern: blankLinePattern } = this
 
@@ -376,10 +368,11 @@ export class Lexer {
   parseListItem(type: MarkerType, lineInfo: LineInfo, contStack: string[]): Node | null {
     const { _raw: raw, _blankLinePattern: blankLinePattern } = this
     let pattern = null
+    let backupIdx = this._idx
     if (type === '+' || type === '-' || type === '*') {
       pattern = new RegExp(`\\${type}`, 'y')
     } else {
-      pattern = new RegExp(`\d{1,9}\\${type}`, 'y')
+      pattern = new RegExp(`\\d{1,9}\\${type}`, 'y')
     }
 
     const identNum = lineInfo.identNum
@@ -400,32 +393,35 @@ export class Lexer {
       contStack.push(" ".repeat(identNum + markerLen + 1))
       this._idx = blankLinePattern.lastIndex
       isListItemFound = true
-      startsWithBlankLine = false
+      startsWithBlankLine = true
     } else {
+      this._idx = pattern.lastIndex
       const spaceNum = this._skipIndentation()
       if (spaceNum) {
         isListItemFound = true
-        startsWithBlankLine = true
+        startsWithBlankLine = false
         if (spaceNum <= 4) {
           // Basic case
           contStack.push(" ".repeat(identNum + markerLen + spaceNum))
-          this._idx += markerLen + spaceNum
+          // this._idx += markerLen + spaceNum
         } else {
           // Item starting with indented code
           contStack.push(" ".repeat(identNum + markerLen + 1))
-          this._idx += markerLen + 1
+          this._idx -= spaceNum - 1
         }
       }
     }
 
-    if (!isListItemFound) return null
+    if (!isListItemFound) {
+      this._idx = backupIdx
+      return null
+    }
 
     let block = this._nextBlock(contStack, null, !startsWithBlankLine)
     if (!(startsWithBlankLine && block.type === NodeType.BLANK_LINE)) {
       while (block.type !== NodeType.CONTAINER_EXIT) {
         children.pushBack(block)
 
-        // TODO: no skip identation
         block = this._nextBlock(contStack, block)
       }
     }
@@ -635,6 +631,7 @@ export class Lexer {
   }
 
   parseIdentedCode(lineInfo: LineInfo, contStack: string[]) {
+    // TODO: code refactory
     // idented code block cannot interrupt a paragraph
     const { identNum} = lineInfo
     const { _blankLinePattern: blankLinePattern, _raw: raw, _identedCodePattern: identedCodePattern } = this
@@ -645,61 +642,61 @@ export class Lexer {
     this._idx -= identNum
     let backupIdx = this._idx
 
-    // console.log(this._idx)
+    let lastArrowIndex = contStack.lastIndexOf('>')
 
     // TODO: regex-free optimization
     while (true) {
 
-      let blanks = ""
+      let blankLines = 0
       let ccraw = ""
-      blankLinePattern.lastIndex = this._idx
 
-      if (lf.isBlankLine) {
-        blanks += '\n'.repeat(lf.blankLines)
-        lf = this._nextLine({
-          contStack,
-          skipIdentation: false
-        })
+      // blankLinePattern.lastIndex = this._idx
+
+      let shouldBreak = false
+
+      while (lf?.isBlankLine) {
+        if (lf.isPrefixOk || (lf.invalidContIdx > lastArrowIndex)) {
+          blankLines += lf.blankLines
+          lf = this._nextLine({
+            contStack,
+            skipIdentation: false
+          })
+        } else {
+          shouldBreak = true
+          this._idx = backupIdx
+          break
+        }
       }
 
-      if (!lf) {
-        // end of raw
-        break
-      }
+      // end of raw
+      if (!lf) shouldBreak = true
 
-      if (!lf.isPrefixOk) {
-        this._idx = backupIdx
-        break
-      }
-
+      if (shouldBreak) break
 
       identedCodePattern.lastIndex = this._idx
-      while (lf?.isPrefixOk && !lf.isBlankLine && identedCodePattern.test(raw)) {
-        ccraw += raw.slice(this._idx + 4, this._identedCodePattern.lastIndex)
-        this._idx = this._identedCodePattern.lastIndex
-        backupIdx = this._idx
-        lf = this._nextLine({
-          contStack, 
-          skipIdentation: false, 
-        })
+      while (lf && !lf.isBlankLine) {
+        if (lf.isPrefixOk && identedCodePattern.test(raw)) {
+          ccraw += raw.slice(this._idx + 4, this._identedCodePattern.lastIndex)
+          this._idx = this._identedCodePattern.lastIndex
+          backupIdx = this._idx
+          lf = this._nextLine({
+            contStack, 
+            skipIdentation: false, 
+          })
+        } else {
+          shouldBreak = true
+          this._idx = backupIdx
+          break
+        }
       }
+      
+      if (ccraw) craw = craw + '\n'.repeat(blankLines) + ccraw
+      else break
 
-      if (ccraw) {
-        craw = craw + blanks + ccraw
-      } else {
-        break
-      }
-
-      if (!lf) {
-        // end of raw
-        break
-      }
-
-      if (!lf.isPrefixOk) {
-        this._idx = backupIdx
-        break
-      }
-
+      // end of raw
+      if (!lf) shouldBreak = true
+      if (shouldBreak) break
+ 
     }
     
     return {
