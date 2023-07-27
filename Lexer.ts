@@ -1,5 +1,5 @@
 import { DoublyLinkedList, insertAfter, removeItem } from "./DoublyLinkedList"
-import { atxTypes, Node, NodeType } from "./Node"
+import { atxTypes, ListItem, Node, NodeType, ListItemMarker } from "./Node"
 import createRBTree from 'functional-red-black-tree'
 
 interface CachedBlock {
@@ -30,8 +30,6 @@ const containerExit: Node = {
 const blankLine: Node = {
   type: NodeType.BLANK_LINE
 }
-
-type MarkerType = '-' | '+' | '*' | '.' | ')'
 
 export class Lexer {
   _raw: string
@@ -276,6 +274,8 @@ export class Lexer {
             this.parseBlockquote(alteredLineInfo, currContStack) ||
             this.parseSetextHeading(alteredLineInfo, currContStack, currLastBlock) || 
             this.parseThematicBreak() ||
+            // @ts-ignore
+            (currLastBlock?.type === NodeType.LIST_ITEM ? this.parseListItem(currLastBlock.marker, lineInfo, currContStack) : null) ||
             this.parseList(alteredLineInfo, currContStack, lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH ) ||
             this.parseParagraph(alteredLineInfo, currContStack, lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH)
     } else {
@@ -315,7 +315,7 @@ export class Lexer {
     // TODO: loose or tight
     // TODO: start number
     const unorderedListMarkerPattern = /([-+*])/y
-    const orderedListMarkerPattern = /(\d{1,9})([.)]) /y
+    const orderedListMarkerPattern = /(\d{1,9})([.)])/y
     const { _raw: raw, _blankLinePattern: blankLinePattern } = this
 
     const children = new DoublyLinkedList<Node>
@@ -326,7 +326,7 @@ export class Lexer {
     const uListMarkerResult = unorderedListMarkerPattern.exec(raw)
     const oListMarkerResult = orderedListMarkerPattern.exec(raw)
 
-    let marker: MarkerType | null = null
+    let marker: ListItemMarker | null = null
     let type: NodeType | null = null
 
     if (uListMarkerResult) {
@@ -358,6 +358,8 @@ export class Lexer {
         children.pushBack(block)
     }
 
+    if (children.empty()) return null
+
     return {
       type,
       children
@@ -365,7 +367,7 @@ export class Lexer {
 
   }
 
-  parseListItem(type: MarkerType, lineInfo: LineInfo, contStack: string[]): Node | null {
+  parseListItem(type: ListItemMarker, lineInfo: LineInfo, contStack: string[]): ListItem | null {
     const { _raw: raw, _blankLinePattern: blankLinePattern } = this
     let pattern = null
     let backupIdx = this._idx
@@ -385,7 +387,9 @@ export class Lexer {
     let startsWithBlankLine = false
 
     if (!patternResult) return null
-    const markerLen = patternResult[0].length
+    //@ts-ignore
+    const marker: ListItemMarker = patternResult[0]
+    const markerLen = marker.length
 
     blankLinePattern.lastIndex = pattern.lastIndex
     if (blankLinePattern.test(raw)) {
@@ -430,7 +434,9 @@ export class Lexer {
 
     return {
       type: NodeType.LIST_ITEM,
-      children
+      children,
+      loose: false, // TODO
+      marker
     }  
   }
 

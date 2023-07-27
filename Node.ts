@@ -67,8 +67,21 @@ export const atxTypes = [
   NodeType.ATX_HEADING_6,
 ]
 
-export interface Node {
+export type ListItemMarker = '-' | '+' | '*' | '.' | ')' 
+
+export interface ListItem {
+  type: NodeType.LIST_ITEM,
+  children: DoublyLinkedList<Node>
+  loose: boolean,
+  marker: ListItemMarker
+  raw?: string
+}
+
+interface LegacyNode {
   type: NodeType,
   raw?: string,
   children?: DoublyLinkedList<Node>
 }
+
+export type Node = LegacyNode | ListItem
+
