@@ -319,6 +319,7 @@ export class Lexer {
     const orderedListMarkerPattern = /(\d{1,9})([.)])/y
     const { _raw: raw, _blankLinePattern: blankLinePattern, _lastBlocks: lastBlocks } = this
 
+    let backupIdx = this._idx
     const children = new DoublyLinkedList<Node>
 
     unorderedListMarkerPattern.lastIndex = this._idx
@@ -368,11 +369,15 @@ export class Lexer {
       return null
     }
     
-    let block = null
-    while (block = this.parseListItem(ret.marker, lineInfo, contStack)) {
+    let block: Node | null = this.parseListItem(ret.marker, lineInfo, contStack)
+    while (block?.type === NodeType.LIST_ITEM) {
+      backupIdx = this._idx
       children.pushBack(block)
       lastBlocks[contStack.length] = block
+      block = this._nextBlock(contStack)
     }
+
+    this._idx = backupIdx
 
     if (children.empty()) {
       lastBlocks[contStack.length] = null
