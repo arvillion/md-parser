@@ -1,5 +1,5 @@
 import { DoublyLinkedList, insertAfter, removeItem } from "./DoublyLinkedList"
-import { atxTypes, ListItem, Node, NodeType, ListItemMarker } from "./Node"
+import { atxTypes, ListItem, Node, NodeType, ListItemMarker, UnorderedList, List, Blockquote } from "./Node"
 import createRBTree from 'functional-red-black-tree'
 
 interface CachedBlock {
@@ -44,6 +44,8 @@ export class Lexer {
 
 
   _cachedBlocks = createRBTree<number, Node[]>()
+
+  _lastBlocks: (Node | null)[] = [null]
 
 
   constructor(raw: string) {
@@ -99,10 +101,9 @@ export class Lexer {
   nextBlock(): Node {
     const cache = this._getCache()
     if (cache) {
-      // this._idx = cache.nextIdx
       return cache.node
     } else {
-      return this._nextBlock([], null)
+      return this._nextBlock([])
     }
   }
 
@@ -214,7 +215,7 @@ export class Lexer {
     }
   }
 
-  _nextBlock(contStack: string[], lastBlock: Node | null, skipInitialPrefixCheck: boolean = false): Node {
+  _nextBlock(contStack: string[], skipInitialPrefixCheck: boolean = false): Node {
 
     const cache = this._getCache()
     if (cache) {
@@ -261,7 +262,8 @@ export class Lexer {
 
     const currContStack = isPrefixOk ? contStack : contStack.slice(0, invalidContIdx)
 
-    const currLastBlock = isPrefixOk ? lastBlock : null
+    const lastBlock = this._lastBlocks[contStack.length]
+    const currLastBlock = isPrefixOk ? lastBlock : this._lastBlocks[invalidContIdx]
 
     const alteredLineInfo: LineInfo = {
       ...lineInfo,
@@ -276,7 +278,7 @@ export class Lexer {
             this.parseThematicBreak() ||
             // @ts-ignore
             (currLastBlock?.type === NodeType.LIST_ITEM ? this.parseListItem(currLastBlock.marker, lineInfo, currContStack) : null) ||
-            this.parseList(alteredLineInfo, currContStack, lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH ) ||
+            this.parseList(alteredLineInfo, currContStack) ||
             this.parseParagraph(alteredLineInfo, currContStack, lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH)
     } else {
       if (lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH) {
@@ -311,12 +313,11 @@ export class Lexer {
     }
   }
 
-  parseList(lineInfo: LineInfo, contStack: string[], isLastNodePara: boolean): Node | null {
+  parseList(lineInfo: LineInfo, contStack: string[]): List | null {
     // TODO: loose or tight
-    // TODO: start number
     const unorderedListMarkerPattern = /([-+*])/y
     const orderedListMarkerPattern = /(\d{1,9})([.)])/y
-    const { _raw: raw, _blankLinePattern: blankLinePattern } = this
+    const { _raw: raw, _blankLinePattern: blankLinePattern, _lastBlocks: lastBlocks } = this
 
     const children = new DoublyLinkedList<Node>
 
@@ -329,23 +330,37 @@ export class Lexer {
     let marker: ListItemMarker | null = null
     let type: NodeType | null = null
 
+    let ret: List | null = null
+
+    const isLastNodePara = lastBlocks[contStack.length]?.type === NodeType.POTENTIAL_PARAGRAPH
+
     if (uListMarkerResult) {
-      // @ts-ignore
-      marker = uListMarkerResult[1]
-      type = NodeType.UNORDERED_LIST
+      ret = {
+        type: NodeType.UNORDERED_LIST,
+        loose: false, // TODO
+        children,
+        // @ts-ignore
+        marker: uListMarkerResult[1]
+      }
 
     } else if (oListMarkerResult) {
       const digits = oListMarkerResult[1]
       // when it starts on a line that would otherwise count as paragraph continuation text—then 
       // and the list item is ordered, the start number must be 1.
       if (!(isLastNodePara && digits !== '1')) {
-        // @ts-ignore
-        marker = oListMarkerResult[2]
-        type = NodeType.ORDERED_LIST
+        // @ts-ignore 
+        ret = {
+          type: NodeType.ORDERED_LIST,
+          loose: false, // TODO
+          children,
+          // @ts-ignore
+          marker: oListMarkerResult[2],
+          startNum: digits
+        }
       }
     }
 
-    if (!type || !marker) return null
+    if (!ret) return null
 
     // an empty list item cannot interrupt a paragraph
     blankLinePattern.lastIndex = uListMarkerResult ? unorderedListMarkerPattern.lastIndex : orderedListMarkerPattern.lastIndex
@@ -354,21 +369,21 @@ export class Lexer {
     }
     
     let block = null
-      while (block = this.parseListItem(marker, lineInfo, contStack)) {
-        children.pushBack(block)
+    while (block = this.parseListItem(ret.marker, lineInfo, contStack)) {
+      children.pushBack(block)
+      lastBlocks[contStack.length] = block
     }
 
-    if (children.empty()) return null
-
-    return {
-      type,
-      children
+    if (children.empty()) {
+      lastBlocks[contStack.length] = null
+      return null
     }
 
+    return ret
   }
 
   parseListItem(type: ListItemMarker, lineInfo: LineInfo, contStack: string[]): ListItem | null {
-    const { _raw: raw, _blankLinePattern: blankLinePattern } = this
+    const { _raw: raw, _blankLinePattern: blankLinePattern, _lastBlocks: lastBlocks } = this
     let pattern = null
     let backupIdx = this._idx
     if (type === '+' || type === '-' || type === '*') {
@@ -421,23 +436,27 @@ export class Lexer {
       return null
     }
 
-    let block = this._nextBlock(contStack, null, !startsWithBlankLine)
-    if (!(startsWithBlankLine && block.type === NodeType.BLANK_LINE)) {
-      while (block.type !== NodeType.CONTAINER_EXIT) {
-        children.pushBack(block)
-
-        block = this._nextBlock(contStack, block)
-      }
-    }
-    
-    contStack.pop()
-
-    return {
+    const ret: ListItem = {
       type: NodeType.LIST_ITEM,
       children,
       loose: false, // TODO
       marker
     }  
+
+    lastBlocks[contStack.length - 1] = ret
+    lastBlocks[contStack.length] = null
+    let block = this._nextBlock(contStack, !startsWithBlankLine)
+    if (!(startsWithBlankLine && block.type === NodeType.BLANK_LINE)) {
+      while (block.type !== NodeType.CONTAINER_EXIT) {
+        children.pushBack(block)
+        lastBlocks[contStack.length] = block
+        block = this._nextBlock(contStack)
+      }
+    }
+    
+    contStack.pop()
+
+    return ret
   }
 
   parseAtxHeading(): Node | null {
@@ -463,7 +482,7 @@ export class Lexer {
 
   parseSetextHeading(lineInfo: LineInfo, contStack: string[], lastBlock: Node | null): Node | null {
     const { isPrefixOk } = lineInfo
-    const { _raw: raw } = this
+    const { _raw: raw, _lastBlocks: lastBlocks } = this
 
     if (lastBlock?.type !== NodeType.POTENTIAL_PARAGRAPH) {
       return null
@@ -480,7 +499,8 @@ export class Lexer {
       }
       lastBlock.raw += patternResult[0]
       this._idx = setextHeadingPattern.lastIndex
-      return this._nextBlock(contStack, lastBlock)
+      lastBlocks[contStack.length] = lastBlock
+      return this._nextBlock(contStack)
     }
     return null
   }
@@ -546,7 +566,7 @@ export class Lexer {
   }
 
   parseParagraph(lineInfo: LineInfo, contStack: string[], isLastNodePara: boolean): Node {
-    const { _raw: raw } = this
+    const { _raw: raw, _lastBlocks: lastBlocks } = this
     this._paragraphPattern.lastIndex = this._idx
     const result = this._paragraphPattern.exec(raw)
     this._idx = this._paragraphPattern.lastIndex
@@ -568,11 +588,13 @@ export class Lexer {
     }
 
     let backupIdx = this._idx
-    let nextBlk = this._nextBlock(contStack, block)
+    lastBlocks[contStack.length] = block
+    let nextBlk = this._nextBlock(contStack)
     while (nextBlk.type === NodeType.PARAGRAPH_CONTINUATION) {
       block.raw += nextBlk.raw
       backupIdx = this._idx
-      nextBlk = this._nextBlock(contStack, block)
+      lastBlocks[contStack.length] = block
+      nextBlk = this._nextBlock(contStack)
     }
 
     // if the block is not turned into a setext heading
@@ -606,34 +628,40 @@ export class Lexer {
     return null
   }
 
-  parseBlockquote(lineInfo: LineInfo, contStack: string[]): Node | null {
+  parseBlockquote(lineInfo: LineInfo, contStack: string[]): Blockquote | null {
     // TODO: #239 A block quote can be empty
-    const { _raw: raw } = this
+    const { _raw: raw, _lastBlocks: lastBlocks } = this
     const firstChar = raw.charAt(this._idx)
 
     if (firstChar !== '>') {
       return null
     }
 
+    const list = new DoublyLinkedList<Node>()
+    const ret: Blockquote = {
+      type: NodeType.BLOCKQUOTE,
+      // TODO: raw
+      children: list
+    }
+    
+    lastBlocks[contStack.length] = ret
+
     contStack.push('>')
 
     // TODO: avoid repeated prefix checks
     this._idx = lineInfo.lineBeginIdx
     
-    const list = new DoublyLinkedList<Node>()
-    let block = this._nextBlock(contStack, null)
+    lastBlocks[contStack.length] = null
+    let block = this._nextBlock(contStack)
     while (block.type !== NodeType.CONTAINER_EXIT) {
       list.pushBack(block)
-      block = this._nextBlock(contStack, block)
+      lastBlocks[contStack.length] = block
+      block = this._nextBlock(contStack)
     }
 
     contStack.pop()
 
-    return {
-        type: NodeType.BLOCKQUOTE,
-        // TODO: raw
-        children: list
-      }
+    return ret
   }
 
   parseIdentedCode(lineInfo: LineInfo, contStack: string[]) {

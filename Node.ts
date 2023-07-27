@@ -67,15 +67,43 @@ export const atxTypes = [
   NodeType.ATX_HEADING_6,
 ]
 
-export type ListItemMarker = '-' | '+' | '*' | '.' | ')' 
+export type UnorderedListItemMarker = '-' | '+' | '*'
+export type OrderedListItemMarker = | '.' | ')' 
+
+export type ListItemMarker =  UnorderedListItemMarker | OrderedListItemMarker
 
 export interface ListItem {
-  type: NodeType.LIST_ITEM,
+  type: NodeType.LIST_ITEM
   children: DoublyLinkedList<Node>
-  loose: boolean,
+  loose: boolean
   marker: ListItemMarker
   raw?: string
 }
+
+export interface UnorderedList {
+  type: NodeType.UNORDERED_LIST
+  loose: boolean
+  raw?: string
+  children: DoublyLinkedList<Node>
+  marker: UnorderedListItemMarker
+}
+
+export interface OrderedList {
+  type: NodeType.ORDERED_LIST
+  loose: boolean
+  raw?: string
+  children: DoublyLinkedList<Node>
+  startNum: string,
+  marker: OrderedListItemMarker
+}
+
+export interface Blockquote {
+  type: NodeType.BLOCKQUOTE,
+  children: DoublyLinkedList<Node>,
+  raw?: string
+}
+
+export type List = UnorderedList | OrderedList
 
 interface LegacyNode {
   type: NodeType,
@@ -83,5 +111,5 @@ interface LegacyNode {
   children?: DoublyLinkedList<Node>
 }
 
-export type Node = LegacyNode | ListItem
+export type Node = LegacyNode | ListItem | List | Blockquote
 
