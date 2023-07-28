@@ -276,8 +276,9 @@ export class Lexer {
             this.parseBlockquote(alteredLineInfo, currContStack) ||
             this.parseSetextHeading(alteredLineInfo, currContStack, currLastBlock) || 
             this.parseThematicBreak() ||
+            // HACK: marker is a mess (with digits or without digits?)
             // @ts-ignore
-            (currLastBlock?.type === NodeType.LIST_ITEM ? this.parseListItem(currLastBlock.marker, lineInfo, currContStack) : null) ||
+            (currLastBlock?.type === NodeType.LIST_ITEM ? this.parseListItem(currLastBlock.marker.slice(-1), lineInfo, currContStack) : null) ||
             this.parseList(alteredLineInfo, currContStack) ||
             this.parseParagraph(alteredLineInfo, currContStack, lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH)
     } else {
@@ -376,6 +377,8 @@ export class Lexer {
       lastBlocks[contStack.length] = block
       block = this._nextBlock(contStack)
     }
+
+    if (block) this._storeCache_front(this._idx, block)  
 
     this._idx = backupIdx
 
@@ -653,11 +656,11 @@ export class Lexer {
 
     contStack.push('>')
 
-    // TODO: avoid repeated prefix checks
-    this._idx = lineInfo.lineBeginIdx
+    this._idx++
+    if (raw.charAt(this._idx) === ' ') this._idx++
     
     lastBlocks[contStack.length] = null
-    let block = this._nextBlock(contStack)
+    let block = this._nextBlock(contStack, true)
     while (block.type !== NodeType.CONTAINER_EXIT) {
       list.pushBack(block)
       lastBlocks[contStack.length] = block
