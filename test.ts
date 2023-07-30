@@ -7,9 +7,13 @@ const testDownloadUrl = 'https://spec.commonmark.org/0.30/spec.json'
 const filePath = 'spec.json'
 
 let tc: any = null
-const caseNo = 278
+// const caseNo = 239
+const caseNo = 325
+let raw = ''
+// let raw = `- sasa
 
-let raw = ``
+
+// - sasasa`
 
 main()
 
@@ -85,7 +89,16 @@ async function main() {
 function printNode(nd: Node, depth = 0) {
   let { raw, children, type } = nd
   let typeName = NodeType[type]
-  console.log(`${'  '.repeat(depth)}[${typeName}] ${raw ? 'raw: ' + JSON.stringify(raw) : ''}`)
+
+  const leadingAttrs = ['raw']
+  const ignoredAttrs = ['type', 'children']
+
+  const filteredAttrs = Object.keys(nd).filter(v => !ignoredAttrs.includes(v) && !leadingAttrs.includes(v))
+  // @ts-ignore
+  const info = leadingAttrs.filter(v => v in nd).concat(filteredAttrs).map(v => `${v}=${JSON.stringify(nd[v])}`).join(' | ')
+
+  // console.log(`${'  '.repeat(depth)}[${typeName}] ${raw ? 'raw: ' + JSON.stringify(raw) : ''}`)
+  console.log(`${'  '.repeat(depth)}[${typeName}] ${info}`)
   if (children) {
     let nod: DoublyLinkedListItem<Node> | null = children.front()
     while (nod && nod !== children._tail) {
