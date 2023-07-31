@@ -1,6 +1,7 @@
 import { DoublyLinkedList, insertAfter, removeItem } from "./DoublyLinkedList"
-import { atxTypes, ListItem, Node, NodeType, ListItemMarker, UnorderedList, List, Blockquote } from "./Node"
+import { atxTypes, ListItem, Node, NodeType, ListItemMarker, UnorderedList, List, Blockquote, HtmlBlock } from "./Node"
 import createRBTree from 'functional-red-black-tree'
+import { htmlBlockRules } from './rules'
 
 interface CachedBlock {
   nextIdx: number,
@@ -272,6 +273,7 @@ export class Lexer {
             // @ts-ignore
             (currLastBlock?.type === NodeType.LIST_ITEM ? this.parseListItem(currLastBlock.marker.slice(-1), lineInfo, currContStack) : null) ||
             this.parseList(alteredLineInfo, currContStack) ||
+            this.parseHtml(alteredLineInfo, currContStack) ||
             this.parseParagraph(alteredLineInfo, currContStack, lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH)
     } else {
       if (lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH) {
@@ -305,6 +307,71 @@ export class Lexer {
       }
     
     }
+  }
+
+  parseHtml(lineInfo: LineInfo, contStack: string[]): HtmlBlock | null {
+    // TODO: keep indentation
+    const { _raw: raw, _lastBlocks: lastBlocks } = this
+    let ruleIdx = htmlBlockRules.findIndex(rule => {
+      rule.start.lastIndex = this._idx
+      return rule.start.test(raw)
+    })
+    if (ruleIdx < 0) {
+      return null
+    }
+
+    if (ruleIdx === 6) {
+      const lastBlock = lastBlocks[contStack.length]
+      if (lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH) {
+        return null
+      }
+    }
+
+    const ret: HtmlBlock = {
+      type: NodeType.HTML_BLOCK,
+      raw: ''
+    }
+
+    const lastArrowIndex = contStack.lastIndexOf('>')
+    const rule = htmlBlockRules[ruleIdx]
+    let l: LineInfo | null = lineInfo
+
+    if (ruleIdx < 5) {
+      while (l) {
+        const { isPrefixOk, rollbackIdx, invalidContIdx, isBlankLine } = l
+        if (!(isPrefixOk || (isBlankLine && invalidContIdx > lastArrowIndex))) {
+          this._idx = rollbackIdx
+          break
+        }
+        const beginIdx = this._idx
+        this._goToNextLine()
+        ret.raw += raw.slice(beginIdx, this._idx)
+
+        rule.end!.lastIndex = beginIdx
+        if (rule.end!.test(raw)) {
+          break
+        }
+        l = this._nextLine({ contStack, skipIdentation: false })
+      }
+    } else {
+      while (l) {
+        const { isPrefixOk, rollbackIdx, invalidContIdx, isBlankLine } = l
+        if (!(isPrefixOk || (isBlankLine && invalidContIdx > lastArrowIndex))) {
+          this._idx = rollbackIdx
+          break
+        }
+        if (isBlankLine) {
+          this._idx = rollbackIdx
+          break
+        }
+        const beginIdx = this._idx
+        this._goToNextLine()
+        ret.raw += raw.slice(beginIdx, this._idx)
+
+        l = this._nextLine({ contStack, skipIdentation: false })
+      }
+    }
+    return ret
   }
 
   parseList(lineInfo: LineInfo, contStack: string[]): List | null {

@@ -43,12 +43,15 @@ export enum NodeType {
   PARAGRAPH,
   POTENTIAL_PARAGRAPH,
   PARAGRAPH_CONTINUATION,
+  
+  HTML_BLOCK,
 
   CONTAINER_EXIT,
 
   BLANK_LINE,
 
   UNKNOWN,
+
 }
 
 export const linkTypes = [
@@ -101,6 +104,11 @@ export interface Blockquote {
   type: NodeType.BLOCKQUOTE,
   children: DoublyLinkedList<Node>,
   raw?: string
+}
+
+export interface HtmlBlock {
+  type: NodeType.HTML_BLOCK,
+  raw: string
 }
 
 export type List = UnorderedList | OrderedList
