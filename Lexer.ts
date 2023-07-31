@@ -231,7 +231,7 @@ export class Lexer {
       return containerExit
     }
 
-    const { identNum, isPrefixOk, invalidContIdx, isBlankLine } = lineInfo
+    const { identNum, isPrefixOk, invalidContIdx, isBlankLine, lineBeginIdx } = lineInfo
 
     if (isBlankLine) {
       if (!isPrefixOk) {
@@ -244,8 +244,12 @@ export class Lexer {
           firstArrowIdx++
         }
         if (firstArrowIdx < contStack.length) {
-          const cac = Array(contStack.length - firstArrowIdx).fill(containerExit)
-          this._storeCache(this._idx, ...cac)
+          const cac = Array(contStack.length - firstArrowIdx - 1).fill(containerExit)
+          
+          if(cac.length) this._storeCache(lineBeginIdx, ...cac)
+          this._storeCache(this._idx, blankLine)
+          this._idx = lineBeginIdx
+          return containerExit
         }
       }
       return blankLine
@@ -329,7 +333,7 @@ export class Lexer {
 
     const ret: HtmlBlock = {
       type: NodeType.HTML_BLOCK,
-      raw: ''
+      raw: ' '.repeat(lineInfo.identNum)
     }
 
     const lastArrowIndex = contStack.lastIndexOf('>')
