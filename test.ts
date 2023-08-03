@@ -7,8 +7,7 @@ const testDownloadUrl = 'https://spec.commonmark.org/0.30/spec.json'
 const filePath = 'spec.json'
 
 let tc: any = null
-// const caseNo = 239
-const caseNo = 325
+const caseNo = 192
 let raw = ''
 // let raw = `- sasa
 
@@ -44,6 +43,8 @@ function runTestCase(caseNo: number) {
     printNode(block, 0)
     block = lexer.nextBlock() 
   }
+
+  console.log(lexer._linkRefs)
 }
 
 function runManualTest(raw: string) {

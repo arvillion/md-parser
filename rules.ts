@@ -1,3 +1,4 @@
+
 export const htmlRules: Record<string, RegExp> = {
   tagName: /[a-zA-Z][a-zA-Z0-9-]*/,
   attrName: /[a-zA-Z_:][a-zA-Z0-9_.:-]*/,
@@ -41,3 +42,105 @@ export const htmlBlockRules = [
     start: new RegExp(`(?:${htmlRules.openTag.source}|${htmlRules.closingTag.source})[ \t]*(?:\n|$)`, 'y')
   }
 ]
+
+export const linkRefRules = {
+  // TODO: A link label can have at most 999 characters inside the square brackets.
+  label: /\[[\w\W]*?[^ \t\n][\w\W]*?(?<!\\)\]/y,
+  dest: (raw: string, idx: number) => {
+    const iidx = idx
+    let matched = false
+    if (raw.charAt(idx) === '<') {
+      idx++
+      let chBefore = '<'
+      while (idx < raw.length) {
+        const ch = raw.charAt(idx)
+        if (chBefore !== '\\' && ch === '>') {
+          matched = true
+          idx++
+          break
+        }
+        if ((ch !== '\\' && ch === '<') || ch === '\n') {
+          matched = false
+          break
+        }
+        idx++
+        chBefore = ch
+      }
+    } else {
+      let chBefore = ''
+      const parStack: string[] = []
+      while (idx < raw.length) {
+        const ch = raw.charAt(idx)
+        const chCode = raw.charCodeAt(idx)
+        // does not include ASCII control characters or space character
+        if (chCode <= 32) {
+          matched = true
+          break
+        }
+        if (chBefore !== '\\') {
+          if (ch === '(') {
+            parStack.push('(')
+          } else if (ch === ')') {
+            if (!parStack.pop()) {
+              matched = false
+              break
+            }
+          }
+        }
+        idx++
+        chBefore = ch
+      }
+      if (parStack.length) {
+        matched = false
+      }
+    }
+    if (!matched) {
+      idx = iidx
+    }
+    return {
+      matched,
+      idx
+    }
+  },
+  // may not contain a blank line
+  // should be satisfied before invoking title
+  title: (raw: string, idx: number) => {
+    const iidx = idx
+    const rule = /(["'])[\w\W]*?(?<!\\)\1/y
+    rule.lastIndex = idx
+    if (rule.test(raw)) {
+      return {
+        matched: true,
+        idx: rule.lastIndex
+      }
+    }
+    let matched = false
+    if (raw.charAt(idx) === '(') {
+      idx++
+      let chBefore = '('
+      while (idx < raw.length) {
+        const ch = raw.charAt(idx)
+        if (chBefore !== '\\') {
+          if (ch === '(') {
+            matched = false
+            break
+          } else if (ch === ')') {
+            matched = true
+            idx++
+            break
+          }
+        }
+        idx++
+        chBefore = ch
+      }
+    }
+    if (!matched) {
+      idx = iidx
+    }
+    return {
+      matched: false,
+      idx: iidx
+    }
+  }
+  
+}

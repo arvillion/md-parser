@@ -1,7 +1,7 @@
-import { DoublyLinkedList, insertAfter, removeItem } from "./DoublyLinkedList"
-import { atxTypes, ListItem, Node, NodeType, ListItemMarker, UnorderedList, List, Blockquote, HtmlBlock } from "./Node"
+import { atxTypes, ListItem, Node, NodeType, ListItemMarker, UnorderedList, List, Blockquote, HtmlBlock, Paragraph, PontentialParagraph, ChildrenContainer, InlineNode, Text } from "./Node"
 import createRBTree from 'functional-red-black-tree'
-import { htmlBlockRules } from './rules'
+import { htmlBlockRules, linkRefRules } from './rules'
+import { DoublyLinkedList, DoublyLinkedListItem } from "./DoublyLinkedList"
 
 interface CachedBlock {
   nextIdx: number,
@@ -21,6 +21,18 @@ interface LineInfo {
   blankLines: number
 }
 
+interface LinkRef {
+  label: string
+  dest: string
+  title?: string
+}
+
+interface Delimiter {
+  type: '*' | '_' | '[' | '![' | '`' | '<'
+  length: number
+  textNode: DoublyLinkedListItem<Text>
+}
+
 const containerExit: Node = {
   type: NodeType.CONTAINER_EXIT
 }
@@ -31,7 +43,6 @@ const blankLine: Node = {
 
 export class Lexer {
   _raw: string
-  _blocks: DoublyLinkedList<Node>
   _idx: number
 
   // A line containing no characters, or a line containing only spaces (U+0020) or tabs (U+0009), is called a blank line.
@@ -44,12 +55,12 @@ export class Lexer {
   _cachedBlocks = createRBTree<number, Node[]>()
 
   _lastBlocks: (Node | null)[] = [null]
+  _linkRefs: LinkRef[] = []
 
 
   constructor(raw: string) {
     this._idx = 0
     this._raw = raw
-    this._blocks = new DoublyLinkedList()
   }
 
   _getCache() : CachedBlock | null {
@@ -313,6 +324,63 @@ export class Lexer {
     }
   }
 
+  parseLinkRef(p: PontentialParagraph) {
+    // TODO: may be preceded by up to three spaces of indentation
+    const { raw } = p
+    let idx = 0
+    const ref: LinkRef = {
+      label: '',
+      dest: ''
+    }
+
+    linkRefRules.label.lastIndex = idx
+    if (linkRefRules.label.test(raw)) {
+      ref.label = raw.slice(idx, linkRefRules.label.lastIndex)
+      idx = linkRefRules.label.lastIndex
+    } else {
+      return null
+    }
+
+     // followed by a colon (:), optional spaces or tabs (including up to one line ending)
+    if (raw.charAt(idx) === ':') idx++
+    else return null
+
+    const blankPattern = /[ \t]*\n?[ \t]*/y
+    blankPattern.lastIndex = idx
+    if (blankPattern.test(raw)) idx = blankPattern.lastIndex
+
+    const destRes = linkRefRules.dest(raw, idx)
+    if (destRes.matched) {
+      ref.dest = raw.slice(idx, destRes.idx)
+      idx = destRes.idx
+    } else {
+      return null
+    }
+
+    blankPattern.lastIndex = idx
+    if (blankPattern.test(raw) && blankPattern.lastIndex > idx) {
+      idx = blankPattern.lastIndex
+
+      const titleRes = linkRefRules.title(raw, idx)
+      if (titleRes.matched) {
+        ref.title = raw.slice(idx, titleRes.idx)
+        idx = titleRes.idx
+      }
+    }
+
+    const lineTailPattern = /[ \t]*(?:\n|$)/y
+    lineTailPattern.lastIndex = idx
+    if (!lineTailPattern.test(raw)) {
+      return null
+    }
+    idx = lineTailPattern.lastIndex
+
+    return {
+      idx,
+      ref
+    }
+  }
+
   parseHtml(lineInfo: LineInfo, contStack: string[]): HtmlBlock | null {
     // TODO: keep indentation
     const { _raw: raw, _lastBlocks: lastBlocks } = this
@@ -385,7 +453,7 @@ export class Lexer {
     const { _raw: raw, _blankLinePattern: blankLinePattern, _lastBlocks: lastBlocks } = this
 
     let backupIdx = this._idx
-    const children = new DoublyLinkedList<Node>
+    const children = new ChildrenContainer<Node>
 
     unorderedListMarkerPattern.lastIndex = this._idx
     orderedListMarkerPattern.lastIndex = this._idx
@@ -479,7 +547,7 @@ export class Lexer {
     }
 
     const identNum = lineInfo.identNum
-    const children = new DoublyLinkedList<Node>
+    const children = new ChildrenContainer<Node>
 
     pattern.lastIndex = this._idx
     const patternResult = pattern.exec(raw)
@@ -691,13 +759,27 @@ export class Lexer {
 
     // if the block is not turned into a setext heading
     if (block.type === NodeType.POTENTIAL_PARAGRAPH) {
+      // link references
+      const refRes = this.parseLinkRef(block as PontentialParagraph)
+      if (refRes) {
+        this._linkRefs.push(refRes.ref)
+        block.raw = block.raw.slice(refRes.idx)
+      }
+    }
+
+    if (block.type === NodeType.POTENTIAL_PARAGRAPH) {
       block.type = NodeType.PARAGRAPH
     }
  
-    this._storeCache_front(this._idx, nextBlk)  
-    this._idx = backupIdx
-
-    return block
+    if (block.raw.length) {
+      this._storeCache_front(this._idx, nextBlk)  
+      this._idx = backupIdx
+      return block
+    } else {
+      // pure link reference
+      return nextBlk
+    }
+    
   }
 
   parseThematicBreak(): Node | null {
@@ -728,7 +810,7 @@ export class Lexer {
       return null
     }
 
-    const list = new DoublyLinkedList<Node>()
+    const list = new ChildrenContainer<Node>()
     const ret: Blockquote = {
       type: NodeType.BLOCKQUOTE,
       // TODO: raw
@@ -769,7 +851,6 @@ export class Lexer {
 
     let lastArrowIndex = contStack.lastIndexOf('>')
 
-    // TODO: regex-free optimization
     while (true) {
 
       let blankLines = 0
@@ -862,5 +943,88 @@ export class Lexer {
       }
     }
     return indentNum
+  }
+
+
+  /**
+   * 跳过重复字符
+   * @param raw - 原始字符串
+   * @param idx - 当前索引
+   * @returns 跳过重复字符后的索引
+   */
+  _skipRepeat(raw: string, idx: number) {
+    const ch = raw.charAt(idx)
+    idx++
+    while (idx < raw.length && raw.charAt(idx) === ch) idx++
+    return idx
+  }
+
+
+  parseInlines(raw: string): ChildrenContainer<InlineNode>  {
+    let idx = 0
+    let chBefore = ''
+
+    const nodeList = new DoublyLinkedList<InlineNode>
+
+    const delimStack = new DoublyLinkedList<Delimiter>
+    let oldestDelim: Record<string, DoublyLinkedListItem<Delimiter>> = {}
+
+    let textBeginIdx = 0
+
+    while (idx < raw.length) {
+      const ch = raw.charAt(idx)
+      if (chBefore !== '\\') {
+        if (ch === '`') {
+          const nextIdx = this._skipRepeat(raw, idx)
+          const backtickLen = nextIdx - idx
+          const delimStr = ch.repeat(backtickLen)
+          if (oldestDelim[delimStr]) {
+            const delimItem = oldestDelim[delimStr]
+            let rraw = ''
+            let i = delimItem.next.item.textNode
+            while (i !== nodeList._tail) {
+              rraw += i.item.raw
+              i = i.next
+            }
+
+            // reset oldestDim
+            oldestDelim = {}
+            
+            // remove all delimiters between
+
+            // remove all nodes between
+
+            nodeList.pushBack({
+              type: NodeType.CODE_SPAN,
+              raw: rraw
+            })
+            idx += backtickLen
+          } else {
+            if (textBeginIdx < idx) {
+              nodeList.pushBack({
+                type: NodeType.TEXT,
+                raw: raw.slice(textBeginIdx, idx)
+              })
+            }
+            const textNode = nodeList.pushBack({
+              type: NodeType.TEXT,
+              raw: delimStr
+            }) as DoublyLinkedListItem<Text>
+            textBeginIdx = idx + backtickLen
+            const delimItem = delimStack.pushBack({
+              type: '`',
+              length: backtickLen,
+              textNode
+            })
+            oldestDelim[delimStr] = delimItem
+            idx += backtickLen
+          }
+        }
+      }
+
+
+      idx++
+      chBefore = ch
+    }
   }
 }
