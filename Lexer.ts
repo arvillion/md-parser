@@ -1,7 +1,7 @@
-import { atxTypes, ListItem, Node, NodeType, ListItemMarker, UnorderedList, List, Blockquote, HtmlBlock, Paragraph, PontentialParagraph, ChildrenContainer, InlineNode, Text } from "./Node"
+import { atxTypes, ListItem, Node, NodeType, ListItemMarker, UnorderedList, List, Blockquote, HtmlBlock, Paragraph, PontentialParagraph, ChildrenContainer, InlineNode, Text, Link } from "./Node"
 import createRBTree from 'functional-red-black-tree'
-import { htmlBlockRules, linkRefRules } from './rules'
-import { DoublyLinkedList, DoublyLinkedListItem } from "./DoublyLinkedList"
+import { autoLinkRule, htmlBlockRules, htmlInlineRule, linkRefRules } from './rules'
+import { DoublyLinkedList, DoublyLinkedListItem, removeItems } from "./DoublyLinkedList"
 
 interface CachedBlock {
   nextIdx: number,
@@ -961,15 +961,20 @@ export class Lexer {
 
 
   parseInlines(raw: string): ChildrenContainer<InlineNode>  {
+    type DelimStack = DoublyLinkedList<Delimiter>
+    type DelimStackItem = DoublyLinkedListItem<Delimiter>
+
     let idx = 0
     let chBefore = ''
 
     const nodeList = new DoublyLinkedList<InlineNode>
 
     const delimStack = new DoublyLinkedList<Delimiter>
-    let oldestDelim: Record<string, DoublyLinkedListItem<Delimiter>> = {}
+    let oldestDelim: Record<string, DelimStackItem> = {}
 
     let textBeginIdx = 0
+
+    // const tasks: Map<InlineNode, DelimStack> = new Map
 
     while (idx < raw.length) {
       const ch = raw.charAt(idx)
@@ -981,18 +986,23 @@ export class Lexer {
           if (oldestDelim[delimStr]) {
             const delimItem = oldestDelim[delimStr]
             let rraw = ''
-            let i = delimItem.next.item.textNode
-            while (i !== nodeList._tail) {
-              rraw += i.item.raw
-              i = i.next
+            {
+              let i = delimItem.next.item.textNode
+              while (i !== nodeList._tail) {
+                // tasks.delete(i.item)
+                rraw += i.item.raw
+                i = i.next
+              }
             }
 
             // reset oldestDim
             oldestDelim = {}
-            
-            // remove all delimiters between
 
             // remove all nodes between
+            removeItems(delimItem.item.textNode, nodeList._tail)
+            
+            // remove all delimiters between
+            removeItems(delimItem, delimStack._tail)
 
             nodeList.pushBack({
               type: NodeType.CODE_SPAN,
@@ -1001,7 +1011,7 @@ export class Lexer {
             idx += backtickLen
           } else {
             if (textBeginIdx < idx) {
-              nodeList.pushBack({
+              const nd = nodeList.pushBack({
                 type: NodeType.TEXT,
                 raw: raw.slice(textBeginIdx, idx)
               })
@@ -1019,6 +1029,53 @@ export class Lexer {
             oldestDelim[delimStr] = delimItem
             idx += backtickLen
           }
+        } else if (ch === '<') {
+          autoLinkRule.lastIndex = idx
+          const ruleRes = autoLinkRule.exec(raw)
+          if (ruleRes) {
+            if (textBeginIdx < idx) {
+              nodeList.pushBack({
+                type: NodeType.TEXT,
+                raw: raw.slice(textBeginIdx, idx)
+              })
+            }
+            textBeginIdx = autoLinkRule.lastIndex
+
+            const label = ruleRes[0].slice(1, -1)
+            const link = ruleRes[1] ? ruleRes[1] : 'mailto:' + ruleRes[2]
+
+            // reset oldestDim
+            oldestDelim = {}
+
+            nodeList.pushBack({
+              type: NodeType.AUTO_LINK,
+              label,
+              link
+            })
+            idx = autoLinkRule.lastIndex
+            continue
+          }
+
+          htmlInlineRule.lastIndex = idx
+          if (htmlInlineRule.test(raw)) {
+            if (textBeginIdx < idx) {
+              nodeList.pushBack({
+                type: NodeType.TEXT,
+                raw: raw.slice(textBeginIdx, idx)
+              })
+            }
+            textBeginIdx = autoLinkRule.lastIndex
+
+             // reset oldestDim
+             oldestDelim = {}
+
+             nodeList.pushBack({
+               type: NodeType.HTML_INLINE,
+               raw: raw.slice(idx, htmlInlineRule.lastIndex)
+             })
+             idx = htmlInlineRule.lastIndex
+             continue
+          }
         }
       }
 
@@ -1026,5 +1083,7 @@ export class Lexer {
       idx++
       chBefore = ch
     }
+
+    return nodeList
   }
 }

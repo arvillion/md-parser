@@ -164,7 +164,8 @@ export interface HtmlInline {
 }
 
 export interface AutoLink {
-  type: NodeType.CODE_SPAN
+  type: NodeType.AUTO_LINK
+  label: string
   link: string
 }
 

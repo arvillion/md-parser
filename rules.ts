@@ -144,3 +144,8 @@ export const linkRefRules = {
   }
   
 }
+
+export const autoLinkRule = /<(?:([a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^\x00-\x1f\x7f <>]*)|([a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*))>/y
+
+// html comment rule is contained in declaration rule
+export const htmlInlineRule = new RegExp(`(?:<!\\[CDATA\\[[\\w\\W]*?\\]\\]>)|(?:<![\\w\\W]*?>)|(?:<\\?[\\w\\W]*?\\?>)|(?:${htmlRules.openTag})|(?:${htmlRules.closingTag})`, 'y')

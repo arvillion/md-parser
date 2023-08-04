@@ -76,18 +76,18 @@ export function insertAfter<T>(pos: DoublyLinkedListItem<T>, item: T): DoublyLin
   return itemNew
 }
 
-// export function removeItems<T>(itemStart: DoublyLinkedListItem<T>, itemEnd: DoublyLinkedListItem<T>) {
-//   const itemBefore = itemStart.last
-//   const itemAfter = itemEnd.next
-//   if (itemBefore) {
-//     itemBefore.next = itemAfter
-//   }
-//   if (itemAfter) {
-//     itemAfter.last = itemBefore
-//   }
-//   // @ts-ignore
-//   itemStart.next = itemEnd.last = null
-// }
+export function removeItems<T>(itemStart: DoublyLinkedListItem<T>, itemEnd: DoublyLinkedListItem<T>) {
+  const itemBefore = itemStart.last
+  const itemAfter = itemEnd
+  if (itemBefore) {
+    itemBefore.next = itemAfter
+  }
+  if (itemAfter) {
+    itemAfter.last = itemBefore
+  }
+  // @ts-ignore
+  itemStart.next = itemEnd.last = null
+}
 
 // export function detachBack<T>(item: DoublyLinkedListItem<T>) {
 //   const itemAfter = item.next
