@@ -184,11 +184,13 @@ export interface FullRefLink {
 
 export interface CollapsedRefLink {
   type: NodeType.COLLAPSED_REF_LINK
+  children: ChildrenContainer<InlineNode>
   label: string
 }
 
 export interface ShortcutRefLink {
   type: NodeType.SHORTCUT_REF_LINK
+  children: ChildrenContainer<InlineNode>
   label: string
 }
 
@@ -210,11 +212,13 @@ export interface FullRefImage {
 
 export interface CollapsedRefImage {
   type: NodeType.COLLAPSED_REF_IMAGE
+  children: ChildrenContainer<InlineNode>
   label: string
 }
 
 export interface ShortcutRefImage {
   type: NodeType.SHORTCUT_REF_IMAGE
+  children: ChildrenContainer<InlineNode>
   label: string
 }
 
@@ -222,6 +226,10 @@ export interface Text {
   type: NodeType.TEXT,
   raw: string
 }
+
+export type LinkType = NodeType.INLINE_LINK | NodeType.FULL_REF_LINK | NodeType.COLLAPSED_REF_LINK | NodeType.SHORTCUT_REF_LINK
+export type ImageType = NodeType.INLINE_IMAGE | NodeType.FULL_REF_IMAGE | NodeType.COLLAPSED_REF_IMAGE | NodeType.SHORTCUT_REF_IMAGE
+
 
 export type RefImage = FullRefImage | CollapsedRefImage | ShortcutRefImage
 export type Image = InlineImage | RefImage
