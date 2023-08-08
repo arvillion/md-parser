@@ -2,6 +2,7 @@ import { DoublyLinkedListItem } from "./DoublyLinkedList";
 import { Lexer } from "./Lexer";
 import { NodeType, Node } from "./Node";
 import * as fs from 'node:fs';
+import { parseInlines } from "./InlineParser"
 
 const testDownloadUrl = 'https://spec.commonmark.org/0.30/spec.json'
 const filePath = 'spec.json'
@@ -53,9 +54,12 @@ function runManualTest(raw: string) {
   const blocks: Node[] = []
   let block: Node = lexer.nextBlock()
   while (block.type !== NodeType.CONTAINER_EXIT) {
-    printNode(block, 0)
+    // printNode(block, 0)
+    blocks.push(block)
     block = lexer.nextBlock() 
   }
+
+  
 }
 
 async function main() {
@@ -88,7 +92,7 @@ async function main() {
 }
 
 function printNode(nd: Node, depth = 0) {
-  let { raw, children, type } = nd
+  const { type } = nd
   let typeName = NodeType[type]
 
   const leadingAttrs = ['raw']
@@ -98,9 +102,13 @@ function printNode(nd: Node, depth = 0) {
   // @ts-ignore
   const info = leadingAttrs.filter(v => v in nd).concat(filteredAttrs).map(v => `${v}=${JSON.stringify(nd[v])}`).join(' | ')
 
-  // console.log(`${'  '.repeat(depth)}[${typeName}] ${raw ? 'raw: ' + JSON.stringify(raw) : ''}`)
   console.log(`${'  '.repeat(depth)}[${typeName}] ${info}`)
-  if (children) {
+
+  if (type === NodeType.PARAGRAPH) {
+    nd.children = parseInlines(nd.raw, )
+  }
+
+  if (n) {
     let nod: DoublyLinkedListItem<Node> | null = children.front()
     while (nod && nod !== children._tail) {
       printNode(nod.item, depth + 1)

@@ -621,13 +621,13 @@ export class Lexer {
     const atxHeadingPatternResult = atxHeadingPattern.exec(raw)
     if (atxHeadingPatternResult) {
       const type = atxTypes[(atxHeadingPatternResult[1].length - 1)]
-      const contentRaw = atxHeadingPatternResult[2].replace(/^[\t ]|[\t g]$/g, '')
-      const araw = raw.slice(this._idx, atxHeadingPattern.lastIndex)
+      const contentRaw = atxHeadingPatternResult[2].replace(/^[\t ]|[\t ]$/g, '')
+      // const araw = raw.slice(this._idx, atxHeadingPattern.lastIndex)
       this._idx = atxHeadingPattern.lastIndex
       // console.log(contentRaw)
       return {
         type,
-        raw: araw,
+        raw: contentRaw,
         // children: null 
       }
     } else {
@@ -652,7 +652,8 @@ export class Lexer {
       } else {
         lastBlock.type = NodeType.SETEXT_H2
       }
-      lastBlock.raw += patternResult[0]
+      // lastBlock.raw += patternResult[0]
+      lastBlock.raw = lastBlock.raw!.slice(0, -1) // remove trailing line break
       this._idx = setextHeadingPattern.lastIndex
       lastBlocks[contStack.length] = lastBlock
       return this._nextBlock(contStack)
@@ -763,6 +764,11 @@ export class Lexer {
 
     if (block.type === NodeType.POTENTIAL_PARAGRAPH) {
       block.type = NodeType.PARAGRAPH
+
+      if (block.raw.endsWith('\n')) {
+        // remove trailing line break
+        block.raw = block.raw.slice(0, -1)
+      }
     }
  
     if (block.raw.length) {

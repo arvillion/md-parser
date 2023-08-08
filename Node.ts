@@ -81,6 +81,21 @@ export const atxTypes = [
   NodeType.ATX_HEADING_6,
 ]
 
+export const setextTypes = [
+  NodeType.SETEXT_H1,
+  NodeType.SETEXT_H2
+]
+
+// export const blockContainerTypes = [
+// ]
+
+// block nodes whose children are inline nodes
+export const inlineContainerTypes = [
+  ...atxTypes,
+  ...setextTypes,
+  NodeType.PARAGRAPH,
+]
+
 export type UnorderedListItemMarker = '-' | '+' | '*'
 export type OrderedListItemMarker = | '.' | ')' 
 
