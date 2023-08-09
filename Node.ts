@@ -163,13 +163,11 @@ export interface CodeSpan {
 
 export interface Emphasis {
   type: NodeType.EMPHASIS
-  raw?: string
   children: ChildrenContainer<InlineNode>
 }
 
 export interface StrongEmphasis {
-  type: NodeType.EMPHASIS
-  raw?: string
+  type: NodeType.STRONG_EMPHASIS
   children: ChildrenContainer<InlineNode>
 }
 

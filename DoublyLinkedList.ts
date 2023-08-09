@@ -43,12 +43,12 @@ export class DoublyLinkedList<T> {
     return el.item
   }
 
-  front(): DoublyLinkedListItem<T> | null {
-    return this._head.next == this._tail ? null : this._head.next
+  front(): DoublyLinkedListItem<T> {
+    return this._head.next
   }
 
-  back(): DoublyLinkedListItem<T> | null {
-    return this._head.next == this._tail ? null : this._tail.last
+  back(): DoublyLinkedListItem<T> {
+    return this._tail.last
   }
 
   removeItems(itemStart: DoublyLinkedListItem<T>, itemEnd: DoublyLinkedListItem<T>) {
@@ -58,7 +58,7 @@ export class DoublyLinkedList<T> {
     itemAfter.last = itemBefore
   }
   
-  slice(itemStart: DoublyLinkedListItem<T>, itemEnd: DoublyLinkedListItem<T>) {
+  detach(itemStart: DoublyLinkedListItem<T>, itemEnd: DoublyLinkedListItem<T>) {
     const list = new DoublyLinkedList<T>()
     if (itemStart === itemEnd) return list
 
@@ -73,6 +73,8 @@ export class DoublyLinkedList<T> {
     return list
   }
 }
+
+
 
 export function removeItem<T>(item: DoublyLinkedListItem<T> | null) {
   if (!item) return

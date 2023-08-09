@@ -1,6 +1,7 @@
-import { NodeType, ChildrenContainer, InlineNode, Text, Link, Image, LinkType, ImageType } from "./Node"
+import { NodeType, ChildrenContainer, InlineNode, Text, Link, Image, LinkType, ImageType, Emphasis, StrongEmphasis } from "./Node"
 import { autoLinkRule, htmlInlineRule } from './rules'
-import { DoublyLinkedList, DoublyLinkedListItem, removeItem } from "./DoublyLinkedList"
+import { DoublyLinkedList, DoublyLinkedListItem, insertAfter, removeItem } from "./DoublyLinkedList"
+import { getEmphasisDelimiterEffect } from "./utils"
 
 type BracketDelimType = '[' | '!['
 type EmphasisDelimType = '*' | '_'
@@ -18,7 +19,9 @@ interface EmphasisDelim {
   idx: number
   textNode: DoublyLinkedListItem<Text>
   length: number
-  // TODO
+  modLength: number // length modulo 3
+  canOpen: boolean
+  canClose: boolean
 }
 
 type Delimiter = BracketDelim | EmphasisDelim
@@ -106,7 +109,7 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>): Children
     return delimItem
   }
 
-  const insertEmphasisDelim = (type: EmphasisDelimType, length: number, idx: number) => {
+  const insertEmphasisDelim = (type: EmphasisDelimType, length: number, idx: number, canOpen: boolean, canClose: boolean) => {
     const textNode = nodeList.pushBack({
       type: NodeType.TEXT,
       raw: type.repeat(length)
@@ -115,7 +118,10 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>): Children
       type,
       textNode,
       length,
-      idx
+      modLength: length % 3,
+      idx,
+      canOpen,
+      canClose
     })
     return delimItem
   }
@@ -418,18 +424,18 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>): Children
                 i = i.last
               }
             }
-            const delimsBetween = delimStack.slice(leftDim.next, delimStack._tail)
+            const delimsBetween = delimStack.detach(leftDim.next, delimStack._tail)
             removeItem(leftDim)
 
             flushText()
-            const inlinesBetween = nodeList.slice(leftDim.item.textNode.next, nodeList._tail)
+            const inlinesBetween = nodeList.detach(leftDim.item.textNode.next, nodeList._tail)
             removeItem(leftDim.item.textNode)
 
               
             if (linkLabel) {
               nodeList.pushBack({
                 type: linkType,
-                children: inlinesBetween, // TODO
+                children: processEmphasis(delimsBetween, inlinesBetween),
                 label: linkLabel
               })
             } else {
@@ -438,7 +444,7 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>): Children
                 type: linkType,
                 dest: linkDest,
                 title: linkTitle,
-                children: inlinesBetween // TODO
+                children: processEmphasis(delimsBetween, inlinesBetween)
               })
             }
             // @ts-ignore
@@ -449,26 +455,102 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>): Children
     
         }
       } else if (ch === '_' || ch === '*') {
-        // const iidx = this._skipRepeat(raw, idx)
-        // const delimItem = insertDelim(ch, raw.slice(idx, iidx))
-        // idx = iidx
-        // textBeginIdx = iidx
+        const iidx = skipRepeat(raw, idx)
+        const charAfter = raw.charAt(iidx)
+        const { canOpen, canClose } = getEmphasisDelimiterEffect(ch, chBefore, charAfter)
+        const delimItem = insertEmphasisDelim(ch, iidx - idx, idx, canOpen, canClose)
+        idx = iidx
+        textBeginIdx = iidx
       } 
     } else {
       idx++
     }
-
 
     idx++
     chBefore = ch
   }
 
   flushText()
+  
+  processEmphasis(delimStack, nodeList)
 
   return nodeList
 }
 
-// TODO
-function processEmphasis() {
-  
+function processEmphasis(delimStack: DoublyLinkedList<Delimiter>, nodeList: DoublyLinkedList<InlineNode>) {
+  let closerPtr = delimStack.front()
+  const startPos: DoublyLinkedListItem<EmphasisDelim>[] = Array(6).fill(delimStack._head)
+  while (true) {
+    let closer: DoublyLinkedListItem<EmphasisDelim> | undefined = undefined
+    while (closerPtr !== delimStack._tail) {
+      if ((closerPtr.item.type === '*' || closerPtr.item.type === '_') && closerPtr.item.canClose) {
+        closer = closerPtr as DoublyLinkedListItem<EmphasisDelim>
+        break
+      }
+      closerPtr = closerPtr.next
+    }
+
+    if (!closer) {
+      // closer not found
+      break
+    }
+
+    let posMapIdx = closer.item.modLength + (closer.item.type === '*' ? 0 : 3)
+
+    let openerPtr = closer.last
+    while (closer.item.length) {
+      let opener: DoublyLinkedListItem<EmphasisDelim> | undefined = undefined
+
+      while (openerPtr !== delimStack._head && openerPtr !== startPos[posMapIdx]) {
+        if (openerPtr.item.type === closer.item.type && (openerPtr.item as EmphasisDelim).canOpen) {
+          // rule 9-10
+          const matched = !((openerPtr.item.canClose || closer.item.canOpen) && (openerPtr.item.modLength + closer.item.modLength) === 3)
+          if (matched) {
+            opener = openerPtr as DoublyLinkedListItem<EmphasisDelim>
+            break
+          }
+        }
+        openerPtr = openerPtr.last
+      }
+
+      if (!opener) break
+
+      // remove any delimiters between
+      delimStack.removeItems(opener.next, closer)
+      
+      while (opener.item.length && closer.item.length) {
+        const empDelimLen = (opener.item.length >= 2 && closer.item.length >= 2) ? 2 : 1
+        const empType = (empDelimLen === 2) ? NodeType.STRONG_EMPHASIS : NodeType.EMPHASIS
+        opener.item.length -= empDelimLen
+        closer.item.length -= empDelimLen
+        opener.item.textNode.item.raw = opener.item.textNode.item.raw.slice(0, -empDelimLen)
+        closer.item.textNode.item.raw = closer.item.textNode.item.raw.slice(empDelimLen)
+        const nd: Emphasis | StrongEmphasis = {
+          type: empType,
+          children: nodeList.detach(opener.item.textNode.next, closer.item.textNode)
+        }
+        insertAfter(opener.item.textNode as DoublyLinkedListItem<InlineNode>, nd)
+      }
+
+      if (opener.item.length === 0) {
+        removeItem(opener.item.textNode)
+        removeItem(opener)
+      }
+    }
+
+    if (closer.item.length) {
+      // opener not found
+      const closer_next = closer.next
+      startPos[posMapIdx] = closer.last
+      if (!closer.item.canOpen) {
+        removeItem(closer)
+      }
+      closer = closer_next
+    } else {
+      // closer runs out of its length
+      removeItem(closer.item.textNode)
+      closer = closer.next
+    }
+  }
+  return nodeList
 }
