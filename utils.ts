@@ -58,3 +58,18 @@ export function getEmphasisDelimiterEffect(type: '*' | '_', chBefore: string, ch
     canOpen, canClose
   }
 }
+
+/**
+ * Remove initial and final spaces or tabs.
+ */
+export function trimParagraph(raw: string) {
+  return raw.replace(/^[\t ]|[\t ]$/g, '')
+}
+
+/**
+ * Remove final line break
+ */
+export function removeFinalLineBreak(raw: string) {
+  return raw.endsWith('\n') ? raw.slice(0, -1) : raw
+}
+

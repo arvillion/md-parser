@@ -1,7 +1,7 @@
 {
   "files": [
-    "Node.ts",
-    "Lexer.ts",
+    "types.ts",
+    "BlockParser.ts",
     "DoublyLinkedList.ts",
     "test.ts"
   ],

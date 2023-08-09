@@ -4,25 +4,13 @@ type ChildrenContainer<T> = DoublyLinkedList<T>
 export { DoublyLinkedList as ChildrenContainer }
 
 export enum NodeType {
-  
-  SOFT_LINE_BREAK,
-
   THEMATIC_BREAK,
 
-  // atx headings
-  ATX_HEADING_1,
-  ATX_HEADING_2,
-  ATX_HEADING_3,
-  ATX_HEADING_4,
-  ATX_HEADING_5,
-  ATX_HEADING_6,
-
-  // setext headings
-  SETEXT_H1,
-  SETEXT_H2,
+  ATX_HEADING,
+  SETEXT_HEADING,
 
   CODE_FENCE_BLOCK,
-  IDENTED_CODE_BLOCK,
+  INDENTED_CODE_BLOCK,
   
   BLOCKQUOTE,
 
@@ -63,6 +51,9 @@ export enum NodeType {
   SHORTCUT_REF_IMAGE,
 
   TEXT,
+
+  SOFT_LINE_BREAK,
+  HARD_LINE_BREAK,
 }
 
 export const linkTypes = [
@@ -72,34 +63,20 @@ export const linkTypes = [
   NodeType.SHORTCUT_REF_LINK,
 ]
 
-export const atxTypes = [
-  NodeType.ATX_HEADING_1,
-  NodeType.ATX_HEADING_2,
-  NodeType.ATX_HEADING_3,
-  NodeType.ATX_HEADING_4,
-  NodeType.ATX_HEADING_5,
-  NodeType.ATX_HEADING_6,
-]
+export interface ContainerExit {
+  type: NodeType.CONTAINER_EXIT
+}
 
-export const setextTypes = [
-  NodeType.SETEXT_H1,
-  NodeType.SETEXT_H2
-]
-
-// export const blockContainerTypes = [
-// ]
-
-// block nodes whose children are inline nodes
-export const inlineContainerTypes = [
-  ...atxTypes,
-  ...setextTypes,
-  NodeType.PARAGRAPH,
-]
+export interface BlankLine {
+  type: NodeType.BLANK_LINE
+}
 
 export type UnorderedListItemMarker = '-' | '+' | '*'
 export type OrderedListItemMarker = | '.' | ')' 
 
-export type ListItemMarker =  UnorderedListItemMarker | OrderedListItemMarker
+export type ListItemMarker =  
+  | UnorderedListItemMarker 
+  | OrderedListItemMarker
 
 export interface ListItem {
   type: NodeType.LIST_ITEM
@@ -109,11 +86,30 @@ export interface ListItem {
   raw?: string
 }
 
+export type SetextHeadingLevel = 1 | 2
+export type AtxHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6
+export interface SetextHeading {
+  type: NodeType.SETEXT_HEADING
+  level: SetextHeadingLevel
+  raw: string
+  children: ChildrenContainer<InlineNode>
+}
+export interface AtxHeading {
+  type: NodeType.ATX_HEADING
+  level: AtxHeadingLevel
+  raw: string
+  children: ChildrenContainer<InlineNode>
+}
+
+export interface ThematicBreak {
+  type: NodeType.THEMATIC_BREAK
+}
+
 export interface UnorderedList {
   type: NodeType.UNORDERED_LIST
   loose: boolean
   raw?: string
-  children: ChildrenContainer<BlockNode>
+  children: ChildrenContainer<ListItem>
   marker: UnorderedListItemMarker
 }
 
@@ -121,7 +117,7 @@ export interface OrderedList {
   type: NodeType.ORDERED_LIST
   loose: boolean
   raw?: string
-  children: ChildrenContainer<BlockNode>
+  children: ChildrenContainer<ListItem>
   startNum: string,
   marker: OrderedListItemMarker
 }
@@ -137,23 +133,31 @@ export interface HtmlBlock {
   raw: string
 }
 
+export interface FencedCodeBlock {
+  type: NodeType.CODE_FENCE_BLOCK
+  raw: string
+}
+
+export interface IndentedCodeBlock {
+  type: NodeType.INDENTED_CODE_BLOCK
+  raw: string
+}
+
 export interface Paragraph {
-  type: NodeType.PARAGRAPH,
-  raw: string,
+  type: NodeType.PARAGRAPH
+  raw: string
   children: ChildrenContainer<InlineNode>
 }
 
 export interface PontentialParagraph {
-  type: NodeType.POTENTIAL_PARAGRAPH,
+  type: NodeType.POTENTIAL_PARAGRAPH
   raw: string
+  setextLevel: SetextHeadingLevel | undefined
 }
 
-export type List = UnorderedList | OrderedList
-
-interface LegacyNode {
-  type: NodeType,
-  raw?: string,
-  children?: ChildrenContainer<BlockNode>
+export interface ParagraphContinuation {
+  type: NodeType.PARAGRAPH_CONTINUATION
+  raw: string
 }
 
 export interface CodeSpan {
@@ -207,9 +211,6 @@ export interface ShortcutRefLink {
   label: string
 }
 
-export type RefLink = FullRefLink | CollapsedRefLink | ShortcutRefLink
-export type Link = InlineLink | RefLink
-
 export interface InlineImage {
   type: NodeType.INLINE_IMAGE
   children: ChildrenContainer<InlineNode> // img alt
@@ -240,13 +241,87 @@ export interface Text {
   raw: string
 }
 
-export type LinkType = NodeType.INLINE_LINK | NodeType.FULL_REF_LINK | NodeType.COLLAPSED_REF_LINK | NodeType.SHORTCUT_REF_LINK
-export type ImageType = NodeType.INLINE_IMAGE | NodeType.FULL_REF_IMAGE | NodeType.COLLAPSED_REF_IMAGE | NodeType.SHORTCUT_REF_IMAGE
+export interface SoftLineBreak {
+  type: NodeType.SOFT_LINE_BREAK
+}
+
+export interface HardLineBreak {
+  type: NodeType.HARD_LINE_BREAK
+}
+
+export type List = 
+  | UnorderedList 
+  | OrderedList
+
+export type LinkType = 
+  | NodeType.INLINE_LINK 
+  | NodeType.FULL_REF_LINK 
+  | NodeType.COLLAPSED_REF_LINK 
+  | NodeType.SHORTCUT_REF_LINK
+
+export type ImageType = 
+  | NodeType.INLINE_IMAGE 
+  | NodeType.FULL_REF_IMAGE 
+  | NodeType.COLLAPSED_REF_IMAGE 
+  | NodeType.SHORTCUT_REF_IMAGE
 
 
-export type RefImage = FullRefImage | CollapsedRefImage | ShortcutRefImage
-export type Image = InlineImage | RefImage
+export type RefImage = 
+  | FullRefImage 
+  | CollapsedRefImage 
+  | ShortcutRefImage
 
-export type InlineNode = CodeSpan | Emphasis | StrongEmphasis | Link | Image | AutoLink | HtmlInline | Text
-export type BlockNode = LegacyNode | ListItem | List | Blockquote | Paragraph | PontentialParagraph
-export type Node = BlockNode | InlineNode
+export type Image = 
+  | InlineImage 
+  | RefImage
+
+export type RefLink = 
+  | FullRefLink 
+  | CollapsedRefLink 
+  | ShortcutRefLink
+
+export type Link = 
+  | InlineLink 
+  | RefLink
+
+export type InlineNode = 
+  | CodeSpan 
+  | Emphasis 
+  | StrongEmphasis 
+  | Link 
+  | Image 
+  | AutoLink 
+  | HtmlInline 
+  | Text
+  | HardLineBreak
+  | SoftLineBreak
+
+export type BlockNode = 
+  | ListItem 
+  | List 
+  | Blockquote 
+  | Paragraph 
+  | PontentialParagraph
+  | ParagraphContinuation
+  | ContainerExit
+  | BlankLine
+  | HtmlBlock
+  | FencedCodeBlock
+  | IndentedCodeBlock
+  | AtxHeading
+  | SetextHeading
+  | ThematicBreak
+
+export type Node = 
+  | BlockNode 
+  | InlineNode
+
+export interface Ref {
+  label: string
+  dest: string
+  title?: string
+}
+
+export type RefMap = Record<string, Ref>
+
+

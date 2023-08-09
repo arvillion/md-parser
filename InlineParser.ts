@@ -1,4 +1,4 @@
-import { NodeType, ChildrenContainer, InlineNode, Text, Link, Image, LinkType, ImageType, Emphasis, StrongEmphasis } from "./Node"
+import { NodeType, ChildrenContainer, InlineNode, Text, Link, Image, LinkType, ImageType, Emphasis, StrongEmphasis } from "./types"
 import { autoLinkRule, htmlInlineRule } from './rules'
 import { DoublyLinkedList, DoublyLinkedListItem, insertAfter, removeItem } from "./DoublyLinkedList"
 import { getEmphasisDelimiterEffect } from "./utils"
@@ -72,16 +72,14 @@ function processCodeSpanRaw(raw: string) {
           ? raw.slice(1, -1) : raw
 }
 
-export function parseInlines(raw: string, refMap: Record<string, Ref>): ChildrenContainer<InlineNode>  {
-  // type DelimStack = DoublyLinkedList<Delimiter>
-  // type DelimStackItem = DoublyLinkedListItem<Delimiter>
-
+export function parseInlines(raw: string, refMap: Record<string, Ref>, container: DoublyLinkedList<InlineNode>): ChildrenContainer<InlineNode>  {
   if (raw.endsWith('\n')) raw = raw.slice(0, -1)
 
   let idx = 0
   let chBefore = ''
+  let canBeHardLineBreak = false
 
-  const nodeList = new DoublyLinkedList<InlineNode>
+  const nodeList = container
   const delimStack = new DoublyLinkedList<Delimiter>
 
   let textBeginIdx = 0
@@ -161,6 +159,13 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>): Children
 
   while (idx < raw.length) {
     const ch = raw.charAt(idx)
+
+    if (chBefore === ' ' && ch === ' ') {
+      canBeHardLineBreak = true
+    } else {
+      canBeHardLineBreak = false
+    }
+
     if (chBefore !== '\\') {
       if (ch === '`') {
         const nextIdx = skipRepeat(raw, idx)
@@ -462,8 +467,20 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>): Children
         idx = iidx
         textBeginIdx = iidx
       } 
-    } else {
+    }
+
+    if (ch === '\n') {
+      if (chBefore === '\\' || canBeHardLineBreak) {
+        flushText()
+        nodeList.pushBack({
+          type: NodeType.SOFT_LINE_BREAK
+        })
+      } else {
+
+      }
       idx++
+      
+      continue
     }
 
     idx++

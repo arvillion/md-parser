@@ -1,11 +1,12 @@
-import { atxTypes, ListItem, Node, NodeType, ListItemMarker, UnorderedList, List, Blockquote, HtmlBlock, Paragraph, PontentialParagraph, ChildrenContainer, InlineNode, Text, Link } from "./Node"
+import { ListItem, Node, NodeType, ListItemMarker, List, Blockquote, HtmlBlock, Paragraph, PontentialParagraph, ChildrenContainer, AtxHeadingLevel, SetextHeading, BlockNode, ContainerExit, BlankLine, IndentedCodeBlock, ThematicBreak, AtxHeading, FencedCodeBlock, Ref, RefMap } from "./types"
 import createRBTree from 'functional-red-black-tree'
 import { htmlBlockRules, linkRefRules } from './rules'
 import { DoublyLinkedList, DoublyLinkedListItem } from "./DoublyLinkedList"
+import { removeFinalLineBreak, trimParagraph } from "./utils"
 
 interface CachedBlock {
   nextIdx: number,
-  node: Node
+  node: BlockNode
 }
 
 interface LineInfo {
@@ -21,21 +22,17 @@ interface LineInfo {
   blankLines: number
 }
 
-interface LinkRef {
-  label: string
-  dest: string
-  title?: string
-}
 
-const containerExit: Node = {
+
+const containerExit: ContainerExit = {
   type: NodeType.CONTAINER_EXIT
 }
 
-const blankLine: Node = {
+const blankLine: BlankLine = {
   type: NodeType.BLANK_LINE
 }
 
-export class Lexer {
+export class BlockParser {
   _raw: string
   _idx: number
 
@@ -46,10 +43,10 @@ export class Lexer {
   _linePattern = /.*(?:\n|$)/y
 
 
-  _cachedBlocks = createRBTree<number, Node[]>()
+  _cachedBlocks = createRBTree<number, BlockNode[]>()
 
-  _lastBlocks: (Node | null)[] = [null]
-  _linkRefs: LinkRef[] = []
+  _lastBlocks: (BlockNode | null)[] = [null]
+  _linkRefs: Ref[] = []
 
 
   constructor(raw: string) {
@@ -80,7 +77,7 @@ export class Lexer {
     return null
   }
 
-  _storeCache(key: number, ...items: Node[]) {
+  _storeCache(key: number, ...items: BlockNode[]) {
     if (!items.length) return
     const { _cachedBlocks: cachedBlocks } = this
     const it = cachedBlocks.get(key)
@@ -91,7 +88,7 @@ export class Lexer {
     }
   }
 
-  _storeCache_front(key: number, ...items: Node[]) {
+  _storeCache_front(key: number, ...items: BlockNode[]) {
     const { _cachedBlocks: cachedBlocks } = this
     const it = cachedBlocks.get(key)
     if (it) {
@@ -101,13 +98,21 @@ export class Lexer {
     }
   }
 
-  nextBlock(): Node {
+  nextBlock(): BlockNode {
     const cache = this._getCache()
     if (cache) {
       return cache.node
     } else {
       return this._nextBlock([])
     }
+  }
+
+  dumpRef(): RefMap {
+    const m: RefMap = {}
+    this._linkRefs.forEach(v => {
+      m[v.label] = v
+    }) 
+    return m
   }
 
   _nextLine({
@@ -218,7 +223,7 @@ export class Lexer {
     }
   }
 
-  _nextBlock(contStack: string[], skipInitialPrefixCheck: boolean = false): Node {
+  _nextBlock(contStack: string[], skipInitialPrefixCheck: boolean = false): BlockNode {
 
     const cache = this._getCache()
     if (cache) {
@@ -260,7 +265,7 @@ export class Lexer {
       return blankLine
     }
     
-    let ret: Node | null = null
+    let ret: BlockNode | null = null
 
     const currContStack = isPrefixOk ? contStack : contStack.slice(0, invalidContIdx)
 
@@ -283,13 +288,13 @@ export class Lexer {
             (currLastBlock?.type === NodeType.LIST_ITEM ? this.parseListItem(currLastBlock.marker.slice(-1), lineInfo, currContStack) : null) ||
             this.parseList(alteredLineInfo, currContStack) ||
             this.parseHtml(alteredLineInfo, currContStack) ||
-            this.parseParagraph(alteredLineInfo, currContStack, lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH)
+            this.parseParagraph(currContStack, lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH)
     } else {
       if (lastBlock?.type === NodeType.POTENTIAL_PARAGRAPH) {
         this._idx -= identNum
-        ret = this.parseParagraph(alteredLineInfo, currContStack, true)
+        ret = this.parseParagraph(currContStack, true)
       } else {
-        ret = this.parseIdentedCode(alteredLineInfo, currContStack)
+        ret = this.parseIndentedCode(alteredLineInfo, currContStack)
       }
     }
 
@@ -322,7 +327,7 @@ export class Lexer {
     // TODO: may be preceded by up to three spaces of indentation
     const { raw } = p
     let idx = 0
-    const ref: LinkRef = {
+    const ref: Ref = {
       label: '',
       dest: ''
     }
@@ -447,7 +452,7 @@ export class Lexer {
     const { _raw: raw, _blankLinePattern: blankLinePattern, _lastBlocks: lastBlocks } = this
 
     let backupIdx = this._idx
-    const children = new ChildrenContainer<Node>
+    const children = new ChildrenContainer<ListItem>
 
     unorderedListMarkerPattern.lastIndex = this._idx
     orderedListMarkerPattern.lastIndex = this._idx
@@ -493,18 +498,19 @@ export class Lexer {
       return null
     }
     
-    let block: Node | null = this.parseListItem(ret.marker, lineInfo, contStack)
-    if (!block) {
+    let listItem: ListItem | null = this.parseListItem(ret.marker, lineInfo, contStack)
+    if (!listItem) {
       return null
     } else {
       backupIdx = this._idx
-      children.pushBack(block)
-      lastBlocks[contStack.length] = block
-      ret.loose = (block as ListItem).loose
+      children.pushBack(listItem)
+      lastBlocks[contStack.length] = listItem
+      ret.loose = listItem.loose
     }
 
     while (true) {
-      const blanks: Record<number, Node> = {}
+      const blanks: Record<number, BlockNode> = {}
+      let block: BlockNode | null = null
       while ((block = this._nextBlock(contStack)) && block.type === NodeType.BLANK_LINE) {
         blanks[this._idx] = block
       }
@@ -541,7 +547,7 @@ export class Lexer {
     }
 
     const identNum = lineInfo.identNum
-    const children = new ChildrenContainer<Node>
+    const children = new ChildrenContainer<BlockNode>
 
     pattern.lastIndex = this._idx
     const patternResult = pattern.exec(raw)
@@ -614,28 +620,30 @@ export class Lexer {
     return ret
   }
 
-  parseAtxHeading(): Node | null {
+  parseAtxHeading(): AtxHeading | null {
     const { _raw: raw } = this
     const atxHeadingPattern = /(#{1,6})[ \t$]+(.*?)(?:[ \t]+#+[ \t]*)?(?:$|\n)/y
     atxHeadingPattern.lastIndex = this._idx
     const atxHeadingPatternResult = atxHeadingPattern.exec(raw)
     if (atxHeadingPatternResult) {
-      const type = atxTypes[(atxHeadingPatternResult[1].length - 1)]
-      const contentRaw = atxHeadingPatternResult[2].replace(/^[\t ]|[\t ]$/g, '')
+      const level = atxHeadingPatternResult[1].length as AtxHeadingLevel
+      const contentRaw = trimParagraph(atxHeadingPatternResult[2])
       // const araw = raw.slice(this._idx, atxHeadingPattern.lastIndex)
       this._idx = atxHeadingPattern.lastIndex
       // console.log(contentRaw)
       return {
-        type,
+        type: NodeType.ATX_HEADING,
+        level,
         raw: contentRaw,
-        // children: null 
+        children: new DoublyLinkedList() 
       }
     } else {
       return null
     }
   }
 
-  parseSetextHeading(lineInfo: LineInfo, contStack: string[], lastBlock: Node | null): Node | null {
+  // TODO: remove lastBlock parameter
+  parseSetextHeading(lineInfo: LineInfo, contStack: string[], lastBlock: Node | null): BlockNode | null {
     const { isPrefixOk } = lineInfo
     const { _raw: raw, _lastBlocks: lastBlocks } = this
 
@@ -647,13 +655,14 @@ export class Lexer {
     setextHeadingPattern.lastIndex = this._idx
     const patternResult = setextHeadingPattern.exec(raw)
     if (patternResult) {
+      // @ts-ignore
+      lastBlock.type = NodeType.SETEXT_HEADING
       if (patternResult[1] === '=') {
-        lastBlock.type = NodeType.SETEXT_H1
+        lastBlock.setextLevel = 1
       } else {
-        lastBlock.type = NodeType.SETEXT_H2
+        lastBlock.setextLevel = 2
       }
-      // lastBlock.raw += patternResult[0]
-      lastBlock.raw = lastBlock.raw!.slice(0, -1) // remove trailing line break
+      lastBlock.raw = trimParagraph(lastBlock.raw.slice(0, -1)) // remove trailing line break first and then do trim
       this._idx = setextHeadingPattern.lastIndex
       lastBlocks[contStack.length] = lastBlock
       return this._nextBlock(contStack)
@@ -661,7 +670,7 @@ export class Lexer {
     return null
   }
 
-  parseFencedCode(contStack: string[]): Node | null {
+  parseFencedCode(contStack: string[]): FencedCodeBlock | null {
     // TODO: identation
     // TODO: multiple empty lines treated as a single blank line?
     // TODO: empty lines ahead
@@ -720,7 +729,7 @@ export class Lexer {
     return null
   }
 
-  parseParagraph(lineInfo: LineInfo, contStack: string[], isLastNodePara: boolean): Node {
+  parseParagraph(contStack: string[], isLastNodePara: boolean): BlockNode {
     const { _raw: raw, _lastBlocks: lastBlocks } = this
     this._paragraphPattern.lastIndex = this._idx
     const result = this._paragraphPattern.exec(raw)
@@ -732,14 +741,13 @@ export class Lexer {
       return {
         type: NodeType.PARAGRAPH_CONTINUATION,
         raw: praw,
-        // children: null
       }
     }
 
-    const block = {
+    const block: PontentialParagraph = {
       type: NodeType.POTENTIAL_PARAGRAPH,
       raw: praw,
-      // children: null
+      setextLevel: undefined
     }
 
     let backupIdx = this._idx
@@ -752,29 +760,39 @@ export class Lexer {
       nextBlk = this._nextBlock(contStack)
     }
 
-    // if the block is not turned into a setext heading
-    if (block.type === NodeType.POTENTIAL_PARAGRAPH) {
-      // link references
-      const refRes = this.parseLinkRef(block as PontentialParagraph)
-      if (refRes) {
-        this._linkRefs.push(refRes.ref)
-        block.raw = block.raw.slice(refRes.idx)
-      }
-    }
+    let retBlock: BlockNode | null = null
 
-    if (block.type === NodeType.POTENTIAL_PARAGRAPH) {
-      block.type = NodeType.PARAGRAPH
+    if (block.setextLevel) {
+      retBlock = {
+        type: NodeType.SETEXT_HEADING,
+        level: block.setextLevel,
+        raw: block.raw
+      } as SetextHeading
+    } else {
+      // if the block is not turned into a setext heading
+      if (block.type === NodeType.POTENTIAL_PARAGRAPH) {
+        // link references
+        const refRes = this.parseLinkRef(block)
+        if (refRes) {
+          this._linkRefs.push(refRes.ref)
+          block.raw = block.raw.slice(refRes.idx)
+        }
 
-      if (block.raw.endsWith('\n')) {
-        // remove trailing line break
-        block.raw = block.raw.slice(0, -1)
+        // TODO
+        if (block.raw.length) {
+          retBlock = {
+            type: NodeType.PARAGRAPH,
+            raw: trimParagraph(removeFinalLineBreak(block.raw)),
+            children: new DoublyLinkedList()
+          } as Paragraph
+        }
       }
     }
  
-    if (block.raw.length) {
+    if (retBlock) {
       this._storeCache_front(this._idx, nextBlk)  
       this._idx = backupIdx
-      return block
+      return retBlock
     } else {
       // pure link reference
       return nextBlk
@@ -782,7 +800,7 @@ export class Lexer {
     
   }
 
-  parseThematicBreak(): Node | null {
+  parseThematicBreak(): ThematicBreak | null {
     const { _raw: raw } = this
     const firstChar = raw.charAt(this._idx)
     if (['_', '*', '-'].includes(firstChar)) {
@@ -792,10 +810,10 @@ export class Lexer {
       thematicBreakPattern.lastIndex = this._idx
       if (thematicBreakPattern.test(raw)) {
         this._idx = thematicBreakPattern.lastIndex
-        const traw = raw.slice(this._idx, thematicBreakPattern.lastIndex)
+        // const traw = raw.slice(this._idx, thematicBreakPattern.lastIndex)
         return {
           type: NodeType.THEMATIC_BREAK,
-          raw: traw,
+          // raw: traw,
         } 
       }
     }
@@ -810,10 +828,9 @@ export class Lexer {
       return null
     }
 
-    const list = new ChildrenContainer<Node>()
+    const list = new ChildrenContainer<BlockNode>()
     const ret: Blockquote = {
       type: NodeType.BLOCKQUOTE,
-      // TODO: raw
       children: list
     }
     
@@ -837,7 +854,7 @@ export class Lexer {
     return ret
   }
 
-  parseIdentedCode(lineInfo: LineInfo, contStack: string[]) {
+  parseIndentedCode(lineInfo: LineInfo, contStack: string[]): IndentedCodeBlock {
     // TODO: code refactory
     // idented code block cannot interrupt a paragraph
     const { identNum} = lineInfo
@@ -907,7 +924,7 @@ export class Lexer {
     }
     
     return {
-      type: NodeType.IDENTED_CODE_BLOCK,
+      type: NodeType.INDENTED_CODE_BLOCK,
       raw: craw, // indented code block raw is excluded of leading 4 spaces,
     }
   }

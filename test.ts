@@ -1,6 +1,6 @@
 import { DoublyLinkedListItem } from "./DoublyLinkedList";
-import { Lexer } from "./Lexer";
-import { NodeType, Node } from "./Node";
+import { Lexer } from "./BlockParser";
+import { NodeType, Node } from "./types";
 import * as fs from 'node:fs';
 import { parseInlines } from "./InlineParser"
 
