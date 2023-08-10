@@ -77,7 +77,6 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
 
   let idx = 0
   let chBefore = ''
-  let canBeHardLineBreak = false
 
   const nodeList = container
   const delimStack = new DoublyLinkedList<Delimiter>
@@ -126,17 +125,15 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
 
   // log the begining position of backticks runs in advance
   const backtickRunPos :Record<number, number[]> = []
-  const backtickRunPattern = /(?<!\\)``*/g
-  idx = 0
-  while (idx < raw.length) {
-    let patternRes: any = null
-    while (patternRes = backtickRunPattern.exec(raw)) {
-      const backtickRunLen = patternRes[0].length
-      if (backtickRunPos[backtickRunLen]) {
-        backtickRunPos[backtickRunLen].push(patternRes.index)
-      } else {
-        backtickRunPos[backtickRunLen] = [patternRes.index]
-      }
+  const backtickRunPattern = /`+/g
+
+  let patternRes: any = null
+  while (patternRes = backtickRunPattern.exec(raw)) {
+    const backtickRunLen = patternRes[0].length
+    if (backtickRunPos[backtickRunLen]) {
+      backtickRunPos[backtickRunLen].push(patternRes.index)
+    } else {
+      backtickRunPos[backtickRunLen] = [patternRes.index]
     }
   }
 
@@ -155,17 +152,14 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
   
   const bracketStack: DoublyLinkedListItem<BracketDelim>[] = []
   idx = 0
+  textBeginIdx = 0
   chBefore = ''
+
+  let consecutiveSpaceNum = 0
 
   while (idx < raw.length) {
     const ch = raw.charAt(idx)
-
-    if (chBefore === ' ' && ch === ' ') {
-      canBeHardLineBreak = true
-    } else {
-      canBeHardLineBreak = false
-    }
-
+    let normal = true
     if (chBefore !== '\\') {
       if (ch === '`') {
         const nextIdx = skipRepeat(raw, idx)
@@ -186,10 +180,11 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
           idx = posArr[posArrIdx] + backtickLen
           textBeginIdx = idx
           backtickRunPos[backtickLen] = posArr.slice(posArrIdx + 1)
-          continue
         } else {
+          idx += backtickLen
           backtickRunPos[backtickLen] = []
         }
+        normal = false
 
       } else if (ch === '<') {
         autoLinkRule.lastIndex = idx
@@ -207,22 +202,22 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
           })
           idx = autoLinkRule.lastIndex
           textBeginIdx = idx
-          continue
-        }
-
-        htmlInlineRule.lastIndex = idx
-        if (htmlInlineRule.test(raw)) {
-          // inline html
-          flushText()
-          
-          nodeList.pushBack({
-            type: NodeType.HTML_INLINE,
-            raw: raw.slice(idx, htmlInlineRule.lastIndex)
-          })
-
-          idx = htmlInlineRule.lastIndex
-          textBeginIdx = idx
-          continue
+          normal = false
+        } else {
+          htmlInlineRule.lastIndex = idx
+          if (htmlInlineRule.test(raw)) {
+            // inline html
+            flushText()
+            
+            nodeList.pushBack({
+              type: NodeType.HTML_INLINE,
+              raw: raw.slice(idx, htmlInlineRule.lastIndex)
+            })
+  
+            idx = htmlInlineRule.lastIndex
+            textBeginIdx = idx
+            normal = false
+          }
         }
       } else if (ch === '[') {
         flushText()
@@ -230,14 +225,14 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
         bracketStack.push(delimItem as DoublyLinkedListItem<BracketDelim>)
         idx++
         textBeginIdx = idx
-        continue
+        normal = false
       } else if (raw.startsWith('![', idx)) {
         flushText()
         const delimItem = insertBracketDelim('![', idx)
         bracketStack.push(delimItem as DoublyLinkedListItem<BracketDelim>)
         idx += 2
         textBeginIdx = idx
-        continue
+        normal = false
       } else if (ch === ']' && bracketStack.length) {
         const leftDim = bracketStack.pop() as DoublyLinkedListItem<BracketDelim>
         
@@ -455,35 +450,58 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
             // @ts-ignore
             idx = nextIdx
             textBeginIdx = idx
-            continue
+            normal = false
           }
     
         }
       } else if (ch === '_' || ch === '*') {
         const iidx = skipRepeat(raw, idx)
-        const charAfter = raw.charAt(iidx)
-        const { canOpen, canClose } = getEmphasisDelimiterEffect(ch, chBefore, charAfter)
-        const delimItem = insertEmphasisDelim(ch, iidx - idx, idx, canOpen, canClose)
-        idx = iidx
-        textBeginIdx = iidx
+        const chAfter = raw.charAt(iidx)
+        const { canOpen, canClose } = getEmphasisDelimiterEffect(ch, chBefore, chAfter)
+        
+        if (canOpen || canClose) {
+          flushText()
+          const delimItem = insertEmphasisDelim(ch, iidx - idx, idx, canOpen, canClose)
+          idx = iidx
+          textBeginIdx = iidx
+        } else {
+          idx = iidx
+        }
+        
+        normal = false
       } 
     }
 
-    if (ch === '\n') {
-      if (chBefore === '\\' || canBeHardLineBreak) {
+
+
+    if (normal && ch === '\n') {
+      if (consecutiveSpaceNum >= 2) {
+        idx -= consecutiveSpaceNum
+        flushText()
+        idx += consecutiveSpaceNum
+
+        nodeList.pushBack({
+          type: NodeType.HARD_LINE_BREAK
+        })
+      } else if (chBefore === '\\') {
+        flushText()
+        nodeList.pushBack({
+          type: NodeType.HARD_LINE_BREAK
+        })
+      } else {
         flushText()
         nodeList.pushBack({
           type: NodeType.SOFT_LINE_BREAK
         })
-      } else {
-
       }
       idx++
-      
-      continue
+      textBeginIdx = idx
+      normal = false
     }
 
-    idx++
+    consecutiveSpaceNum = ch === ' ' ? consecutiveSpaceNum + 1 : 0
+
+    if (normal) idx++
     chBefore = ch
   }
 
@@ -514,8 +532,9 @@ function processEmphasis(delimStack: DoublyLinkedList<Delimiter>, nodeList: Doub
 
     let posMapIdx = closer.item.modLength + (closer.item.type === '*' ? 0 : 3)
 
-    let openerPtr = closer.last
+    
     while (closer.item.length) {
+      let openerPtr = closer.last
       let opener: DoublyLinkedListItem<EmphasisDelim> | undefined = undefined
 
       while (openerPtr !== delimStack._head && openerPtr !== startPos[posMapIdx]) {
@@ -550,6 +569,7 @@ function processEmphasis(delimStack: DoublyLinkedList<Delimiter>, nodeList: Doub
       }
 
       if (opener.item.length === 0) {
+        openerPtr = opener.last
         removeItem(opener.item.textNode)
         removeItem(opener)
       }
@@ -562,11 +582,12 @@ function processEmphasis(delimStack: DoublyLinkedList<Delimiter>, nodeList: Doub
       if (!closer.item.canOpen) {
         removeItem(closer)
       }
-      closer = closer_next
+      closerPtr = closer_next
     } else {
       // closer runs out of its length
       removeItem(closer.item.textNode)
-      closer = closer.next
+      closerPtr = closerPtr.next
+      removeItem(closer)
     }
   }
   return nodeList

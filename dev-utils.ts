@@ -1,11 +1,10 @@
 import { BlockParser } from "./BlockParser";
-import { NodeType, BlockNode } from "./types";
+import { NodeType, BlockNode, Node } from "./types";
 import { parseInlines } from "./InlineParser"
 import { DoublyLinkedList } from "./DoublyLinkedList";
 
 
-function parse(raw: string) {
-  const bp = new BlockParser(raw)
+export function parse(bp: BlockParser) {
   const blocks: BlockNode[] = []
 
   let block = bp.nextBlock()
@@ -37,39 +36,43 @@ function parse(raw: string) {
       parseInlines(top.raw, refMap, top.children)
     }
   }
-
-  const list = new DoublyLinkedList<BlockNode>
-  blocks.forEach(b => list.pushBack(b))
-  return list
+  return blocks
 }
 
-// function printAST(blocks: BlockNode[]) {
+export function printAST(blocks: BlockNode[]) {
 
+  const leadingAttrs = ['raw']
+  const ignoredAttrs = ['type', 'children']
+  const tabsize = 2
+  
 
-//   const dfs = () => {
+  const printNode = (nd: Node, depth: number) => {
+    const { type } = nd
+    const typeName = NodeType[type]
 
-//   }
-//   const { type } = nd
-//   let typeName = NodeType[type]
+    const filteredAttrs = [
+      ...leadingAttrs.filter(v => v in nd),
+      ...Object.keys(nd).filter(v => !ignoredAttrs.includes(v) && !leadingAttrs.includes(v))
+    ]
+    //@ts-ignore
+    const info = filteredAttrs.map(v => `${v}=${JSON.stringify(nd[v])}`).join(' | ')
+    process.stdout.write(' '.repeat(tabsize * depth))
+    console.log(`[${typeName}] ${info}`)
+  }
+  const dfs = (nd: Node, depth: number) => {
+    printNode(nd, depth)
+    // @ts-ignore
+    if (nd.children) {
+      //@ts-ignore
+      const c: DoublyLinkedList<Node> = nd.children 
+      let it = c.front()
+      while (it !== c._tail) {
+        dfs(it.item, depth + 1)
+        it = it.next
+      }
+    }
+  }
 
-//   const leadingAttrs = ['raw']
-//   const ignoredAttrs = ['type', 'children']
+  blocks.forEach(b => dfs(b, 0))
 
-//   const filteredAttrs = Object.keys(nd).filter(v => !ignoredAttrs.includes(v) && !leadingAttrs.includes(v))
-//   // @ts-ignore
-//   const info = leadingAttrs.filter(v => v in nd).concat(filteredAttrs).map(v => `${v}=${JSON.stringify(nd[v])}`).join(' | ')
-
-//   console.log(`${'  '.repeat(depth)}[${typeName}] ${info}`)
-
-//   if (type === NodeType.PARAGRAPH) {
-//     nd.children = parseInlines(nd.raw, )
-//   }
-
-//   if (n) {
-//     let nod: DoublyLinkedListItem<Node> | null = children.front()
-//     while (nod && nod !== children._tail) {
-//       printNode(nod.item, depth + 1)
-//       nod = nod.next
-//     }
-//   }
-// }
+}

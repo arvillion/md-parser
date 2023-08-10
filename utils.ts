@@ -1,12 +1,12 @@
 // A Unicode whitespace character is any code point in the Unicode Zs general category, or a tab (U+0009), line feed (U+000A), form feed (U+000C), or carriage return (U+000D).
-const unicodeWhitespaceRegex = /^[\t\f\r\n\p{Zs}]/
+const unicodeWhitespaceRegex = /^[\t\f\r\n\p{Zs}]/u
 
 // An ASCII punctuation character is !, ", #, $, %, &, ', (, ), *, +, ,, -, ., / (U+0021–2F), :, ;, <, =, >, ?, @ (U+003A–0040), [, \, ], ^, _, ` (U+005B–0060), {, |, }, or ~ (U+007B–007E).
 const ASCIIpunctuations = ['!', '"', '#', '$', '%', '&', "'", '(', ')', '*', '+', ',', '-', '.', '/', ':', ';', '<', '=', '>', '?', '@', '[', '\\', ']', '^', '_', '`', '{', '|', '}', '~']
 
 // A Unicode punctuation character is an ASCII punctuation character or anything in the general Unicode categories Pc, Pd, Pe, Pf, Pi, Po, or Ps.
-const extraPunctuationRegex = /^[\p{Pc}\p{Pd}\p{Pe}\p{Pf}\p{Pi}\p{Po}\p{Ps}]/
-const testUnicodePunctuation = (ch: string) => ch !== null && (ch in ASCIIpunctuations || extraPunctuationRegex.test(ch))
+const extraPunctuationRegex = /^[\p{P}]/u
+const testUnicodePunctuation = (ch: string) => (ASCIIpunctuations.includes(ch) || extraPunctuationRegex.test(ch))
 
 export const asciiControlRegex = /^[\x00-\x1F\x7F]/;
 
@@ -17,8 +17,8 @@ export const asciiControlRegex = /^[\x00-\x1F\x7F]/;
 // For purposes of this definition, the beginning and the end of the line count as Unicode whitespace.
 
 function isLeftFlankingDelimiter(chBefore: string, chAfter: string) {
-  if (chBefore === null) chBefore = ' '
-  if (chAfter === null) chAfter = ''
+  chBefore = chBefore || ' '
+  chAfter = chAfter || ' '
   return !unicodeWhitespaceRegex.test(chAfter) && (!testUnicodePunctuation(chAfter) || unicodeWhitespaceRegex.test(chBefore) || testUnicodePunctuation(chBefore))
 }
 
@@ -29,8 +29,8 @@ function isLeftFlankingDelimiter(chBefore: string, chAfter: string) {
 // For purposes of this definition, the beginning and the end of the line count as Unicode whitespace.
 
 function isRightFlankingDelimiter(chBefore: string, chAfter: string) {
-  if (chBefore === null) chBefore = ' '
-  if (chAfter === null) chAfter = ''
+  chBefore = chBefore || ' '
+  chAfter = chAfter || ' '
   return !unicodeWhitespaceRegex.test(chBefore) && (!testUnicodePunctuation(chBefore) || unicodeWhitespaceRegex.test(chAfter) || testUnicodePunctuation(chAfter))
 }
 
@@ -48,11 +48,11 @@ export function getEmphasisDelimiterEffect(type: '*' | '_', chBefore: string, ch
     // _ character can open emphasis iff it is part of a left-flanking delimiter run and either 
     // (a) not part of a right-flanking delimiter run or 
     // (b) part of a right-flanking delimiter run preceded by a Unicode punctuation character.
-    canOpen = !isRightFD || testUnicodePunctuation(chBefore)
+    canOpen = isLeftFD && (!isRightFD || testUnicodePunctuation(chBefore))
     // _ character can close emphasis iff it is part of a right-flanking delimiter run and either 
     // (a) not part of a left-flanking delimiter run or 
     // (b) part of a left-flanking delimiter run followed by a Unicode punctuation character.
-    canClose = !isLeftFD || testUnicodePunctuation(chAfter)
+    canClose = isRightFD && (!isLeftFD || testUnicodePunctuation(chAfter))
   }
   return {
     canOpen, canClose

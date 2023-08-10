@@ -1,14 +1,15 @@
-import { DoublyLinkedListItem } from "./DoublyLinkedList";
-import { Lexer } from "./BlockParser";
 import { NodeType, Node } from "./types";
 import * as fs from 'node:fs';
-import { parseInlines } from "./InlineParser"
+import { parse, printAST } from "./dev-utils"
+import { BlockParser } from "./BlockParser";
+// import fetch from "node-fetch"
 
 const testDownloadUrl = 'https://spec.commonmark.org/0.30/spec.json'
 const filePath = 'spec.json'
 
 let tc: any = null
-const caseNo = 192
+const caseNo = [481]
+// const caseNo = 192 // TODO
 let raw = ''
 // let raw = `- sasa
 
@@ -29,37 +30,19 @@ function runTestCase(caseNo: number) {
   console.log(`====== Test case #${caseNo} ======`)
   console.log(`raw: ${JSON.stringify(raw)}`)
   console.log(`html: ${JSON.stringify(tcc.html)}`)
-  const lexer = new Lexer(raw)
-  const blocks: Node[] = []
 
-  let block: Node = lexer.nextBlock()
+  const bp = new BlockParser(raw)
+  const blocks = parse(bp)
+  printAST(blocks)
 
-  // while (block = lexer.nextBlock()) {
-  //   blocks.push(block)
-  // }
-  // for (let b of blocks) {
-  //   printNode(b, 0)
-  // }
-  while (block.type !== NodeType.CONTAINER_EXIT) {
-    printNode(block, 0)
-    block = lexer.nextBlock() 
-  }
-
-  console.log(lexer._linkRefs)
 }
 
 function runManualTest(raw: string) {
   console.log(`raw: ${JSON.stringify(raw)}`)
-  const lexer = new Lexer(raw)
-  const blocks: Node[] = []
-  let block: Node = lexer.nextBlock()
-  while (block.type !== NodeType.CONTAINER_EXIT) {
-    // printNode(block, 0)
-    blocks.push(block)
-    block = lexer.nextBlock() 
-  }
 
-  
+  const bp = new BlockParser(raw)
+  const blocks = parse(bp)
+  printAST(blocks)
 }
 
 async function main() {
@@ -84,38 +67,20 @@ async function main() {
     if (raw) {
       runManualTest(raw)
     } else {
-      runTestCase(caseNo)
+      if (Array.isArray(caseNo)) {
+        caseNo.forEach(no => {
+          runTestCase(no)
+          console.log()
+        })
+      } else {
+        runTestCase(caseNo)
+      }
     }
   } catch (e) {
     console.error(e)
   }
 }
 
-function printNode(nd: Node, depth = 0) {
-  const { type } = nd
-  let typeName = NodeType[type]
-
-  const leadingAttrs = ['raw']
-  const ignoredAttrs = ['type', 'children']
-
-  const filteredAttrs = Object.keys(nd).filter(v => !ignoredAttrs.includes(v) && !leadingAttrs.includes(v))
-  // @ts-ignore
-  const info = leadingAttrs.filter(v => v in nd).concat(filteredAttrs).map(v => `${v}=${JSON.stringify(nd[v])}`).join(' | ')
-
-  console.log(`${'  '.repeat(depth)}[${typeName}] ${info}`)
-
-  if (type === NodeType.PARAGRAPH) {
-    nd.children = parseInlines(nd.raw, )
-  }
-
-  if (n) {
-    let nod: DoublyLinkedListItem<Node> | null = children.front()
-    while (nod && nod !== children._tail) {
-      printNode(nod.item, depth + 1)
-      nod = nod.next
-    }
-  }
-}
 
 
 

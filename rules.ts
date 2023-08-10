@@ -9,8 +9,8 @@ htmlRules.attrValueSpec = new RegExp(`[ \\t]*\\n?=[ \\t]*\\n?${htmlRules.attrVal
 // TODO: spaces, tabs, and up to one line ending?
 htmlRules.attr = new RegExp(`(?:[ \\t]+|\\n)${htmlRules.attrName.source}(?:${htmlRules.attrValueSpec.source})?`)
 
-htmlRules.openTag = new RegExp(`<${htmlRules.tagName}(?:${htmlRules.attr})*[ \\t]*\\n?/?>`)
-htmlRules.closingTag = new RegExp(`</${htmlRules.tagName}[ \\t]*\\n?>`)
+htmlRules.openTag = new RegExp(`<${htmlRules.tagName.source}(?:${htmlRules.attr.source})*[ \\t]*\\n?/?>`)
+htmlRules.closingTag = new RegExp(`</${htmlRules.tagName.source}[ \\t]*\\n?>`)
 
 const htmlBlockRule6Tags = ['address', 'article', 'aside', 'base', 'basefont', 'blockquote', 'body', 'caption', 'center', 'col', 'colgroup', 'dd', 'details', 'dialog', 'dir', 'div', 'dl', 'dt', 'fieldset', 'figcaption', 'figure', 'footer', 'form', 'frame', 'frameset', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'head', 'header', 'hr', 'html', 'iframe', 'legend', 'li', 'link', 'main', 'menu', 'menuitem', 'nav', 'noframes', 'ol', 'optgroup', 'option', 'p', 'param', 'section', 'source', 'summary', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'title', 'tr', 'track', 'ul']
 
@@ -148,4 +148,4 @@ export const linkRefRules = {
 export const autoLinkRule = /<(?:([a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^\x00-\x1f\x7f <>]*)|([a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*))>/y
 
 // html comment rule is contained in declaration rule
-export const htmlInlineRule = new RegExp(`(?:<!\\[CDATA\\[[\\w\\W]*?\\]\\]>)|(?:<![\\w\\W]*?>)|(?:<\\?[\\w\\W]*?\\?>)|(?:${htmlRules.openTag})|(?:${htmlRules.closingTag})`, 'y')
+export const htmlInlineRule = new RegExp(`(?:<!\\[CDATA\\[[\\w\\W]*?\\]\\]>)|(?:<![\\w\\W]*?>)|(?:<\\?[\\w\\W]*?\\?>)|(?:${htmlRules.openTag.source})|(?:${htmlRules.closingTag.source})`, 'y')

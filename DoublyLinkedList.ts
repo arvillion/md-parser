@@ -52,6 +52,7 @@ export class DoublyLinkedList<T> {
   }
 
   removeItems(itemStart: DoublyLinkedListItem<T>, itemEnd: DoublyLinkedListItem<T>) {
+    if (itemStart === itemEnd) return
     const itemBefore = itemStart.last
     const itemAfter = itemEnd
     itemBefore.next = itemAfter
@@ -76,8 +77,7 @@ export class DoublyLinkedList<T> {
 
 
 
-export function removeItem<T>(item: DoublyLinkedListItem<T> | null) {
-  if (!item) return
+export function removeItem<T>(item: DoublyLinkedListItem<T>) {
   const itemBefore = item.last
   const itemAfter = item.next
   itemBefore.next = itemAfter
