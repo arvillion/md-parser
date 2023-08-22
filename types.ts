@@ -21,6 +21,8 @@ export enum NodeType {
   PARAGRAPH,
   POTENTIAL_PARAGRAPH,
   PARAGRAPH_CONTINUATION,
+
+  LINK_REF_DEF,
   
   HTML_BLOCK,
 
@@ -152,13 +154,22 @@ export interface Paragraph {
 export interface PontentialParagraph {
   type: NodeType.POTENTIAL_PARAGRAPH
   raw: string
-  setextLevel: SetextHeadingLevel | undefined
+  contentBeginIdx: number
 }
 
 export interface ParagraphContinuation {
   type: NodeType.PARAGRAPH_CONTINUATION
   raw: string
 }
+
+export interface LinkRefDef {
+  type: NodeType.LINK_REF_DEF,
+  label: string
+  dest: string
+  title?: string
+}
+
+// inline nodes start from here
 
 export interface CodeSpan {
   type: NodeType.CODE_SPAN
@@ -311,6 +322,7 @@ export type BlockNode =
   | AtxHeading
   | SetextHeading
   | ThematicBreak
+  | LinkRefDef
 
 export type Node = 
   | BlockNode 

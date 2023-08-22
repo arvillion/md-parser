@@ -1,8 +1,8 @@
-import { ListItem, Node, NodeType, ListItemMarker, List, Blockquote, HtmlBlock, Paragraph, PontentialParagraph, ChildrenContainer, AtxHeadingLevel, SetextHeading, BlockNode, ContainerExit, BlankLine, IndentedCodeBlock, ThematicBreak, AtxHeading, FencedCodeBlock, Ref, RefMap } from "./types"
+import { ListItem, Node, NodeType, ListItemMarker, List, Blockquote, HtmlBlock, Paragraph, PontentialParagraph, ChildrenContainer, AtxHeadingLevel, SetextHeading, BlockNode, ContainerExit, BlankLine, IndentedCodeBlock, ThematicBreak, AtxHeading, FencedCodeBlock, Ref, RefMap, LinkRefDef } from "./types"
 import createRBTree from 'functional-red-black-tree'
 import { htmlBlockRules, linkRefRules } from './rules'
 import { DoublyLinkedList, DoublyLinkedListItem } from "./DoublyLinkedList"
-import { removeFinalLineBreak, trimParagraph } from "./utils"
+import { removeFinalLineBreak, restoreBackslashEscapes, trimParagraph } from "./utils"
 
 interface CachedBlock {
   nextIdx: number,
@@ -281,7 +281,7 @@ export class BlockParser {
       ret = this.parseAtxHeading() ||
             this.parseFencedCode(currContStack) ||
             this.parseBlockquote(alteredLineInfo, currContStack) ||
-            this.parseSetextHeading(alteredLineInfo, currContStack, currLastBlock) || 
+            this.parseSetextHeading(currLastBlock) || 
             this.parseThematicBreak() ||
             // HACK: marker is a mess (with digits or without digits?)
             // @ts-ignore
@@ -323,61 +323,79 @@ export class BlockParser {
     }
   }
 
-  parseLinkRef(p: PontentialParagraph) {
+  parseLinkRef(p: PontentialParagraph): LinkRefDef | null {
     // TODO: may be preceded by up to three spaces of indentation
     const { raw } = p
     let idx = 0
-    const ref: Ref = {
-      label: '',
-      dest: ''
-    }
 
-    linkRefRules.label.lastIndex = idx
-    if (linkRefRules.label.test(raw)) {
-      ref.label = raw.slice(idx, linkRefRules.label.lastIndex)
-      idx = linkRefRules.label.lastIndex
-    } else {
-      return null
-    }
+    let ret: LinkRefDef | null = null
 
-     // followed by a colon (:), optional spaces or tabs (including up to one line ending)
-    if (raw.charAt(idx) === ':') idx++
-    else return null
+    while (idx < raw.length) {
+      let refLabel = ''
+      let refDest = ''
+      let refTitle = ''
 
-    const blankPattern = /[ \t]*\n?[ \t]*/y
-    blankPattern.lastIndex = idx
-    if (blankPattern.test(raw)) idx = blankPattern.lastIndex
 
-    const destRes = linkRefRules.dest(raw, idx)
-    if (destRes.matched) {
-      ref.dest = raw.slice(idx, destRes.idx)
-      idx = destRes.idx
-    } else {
-      return null
-    }
-
-    blankPattern.lastIndex = idx
-    if (blankPattern.test(raw) && blankPattern.lastIndex > idx) {
-      idx = blankPattern.lastIndex
-
-      const titleRes = linkRefRules.title(raw, idx)
-      if (titleRes.matched) {
-        ref.title = raw.slice(idx, titleRes.idx)
-        idx = titleRes.idx
+      linkRefRules.label.lastIndex = idx
+      if (linkRefRules.label.test(raw)) {
+        refLabel = raw.slice(idx, linkRefRules.label.lastIndex)
+        idx = linkRefRules.label.lastIndex
+      } else {
+        return null
       }
+
+      // followed by a colon (:), optional spaces or tabs (including up to one line ending)
+      if (raw.charAt(idx) === ':') idx++
+      else return null
+
+      const seperatorPattern = /[ \t]*\n?[ \t]*/y
+      seperatorPattern.lastIndex = idx
+      if (seperatorPattern.test(raw)) idx = seperatorPattern.lastIndex
+
+      const destRes = linkRefRules.dest(raw, idx)
+      if (destRes.matched) {
+        refDest = raw.slice(idx, destRes.idx)
+        refDest = restoreBackslashEscapes(refDest)
+        idx = destRes.idx
+      } else {
+        return null
+      }
+
+      seperatorPattern.lastIndex = idx
+      if (seperatorPattern.test(raw) && seperatorPattern.lastIndex > idx) {
+        idx = seperatorPattern.lastIndex
+
+        const titleRes = linkRefRules.title(raw, idx)
+        if (titleRes.matched) {
+          refTitle = raw.slice(idx, titleRes.idx)
+          refTitle = restoreBackslashEscapes(refTitle)
+          idx = titleRes.idx
+        }
+      }
+
+      const lineTailPattern = /[ \t]*(?:\n|$)/y
+      lineTailPattern.lastIndex = idx
+      if (!lineTailPattern.test(raw)) {
+        return null
+      }
+      idx = lineTailPattern.lastIndex
+
+      const refNode: LinkRefDef = { 
+        type: NodeType.LINK_REF_DEF,
+        label: refLabel,
+        dest: refDest,
+        title: refTitle
+      }
+      if (!ret) {
+        ret = refNode
+      } else {
+        // NOTE: (p.contentBeginIdx + idx) is not accurate. It's only a relative index.
+        this._storeCache_front(p.contentBeginIdx + idx, refNode)
+      }
+      p.raw = raw.slice(idx)
     }
 
-    const lineTailPattern = /[ \t]*(?:\n|$)/y
-    lineTailPattern.lastIndex = idx
-    if (!lineTailPattern.test(raw)) {
-      return null
-    }
-    idx = lineTailPattern.lastIndex
-
-    return {
-      idx,
-      ref
-    }
+    return ret
   }
 
   parseHtml(lineInfo: LineInfo, contStack: string[]): HtmlBlock | null {
@@ -643,9 +661,8 @@ export class BlockParser {
   }
 
   // TODO: remove lastBlock parameter
-  parseSetextHeading(lineInfo: LineInfo, contStack: string[], lastBlock: Node | null): BlockNode | null {
-    const { isPrefixOk } = lineInfo
-    const { _raw: raw, _lastBlocks: lastBlocks } = this
+  parseSetextHeading(lastBlock: Node | null): BlockNode | null {
+    const { _raw: raw } = this
 
     if (lastBlock?.type !== NodeType.POTENTIAL_PARAGRAPH) {
       return null
@@ -655,17 +672,30 @@ export class BlockParser {
     setextHeadingPattern.lastIndex = this._idx
     const patternResult = setextHeadingPattern.exec(raw)
     if (patternResult) {
-      // @ts-ignore
-      lastBlock.type = NodeType.SETEXT_HEADING
-      if (patternResult[1] === '=') {
-        lastBlock.setextLevel = 1
+
+      // parse link reference definitions and see whether there's text left
+      const refNode = this.parseLinkRef(lastBlock)
+      if (refNode && !lastBlock.raw.length) {
+        return refNode
       } else {
-        lastBlock.setextLevel = 2
-      }
-      lastBlock.raw = trimParagraph(lastBlock.raw.slice(0, -1)) // remove trailing line break first and then do trim
-      this._idx = setextHeadingPattern.lastIndex
-      lastBlocks[contStack.length] = lastBlock
-      return this._nextBlock(contStack)
+        const headNode: SetextHeading = {
+          type: NodeType.SETEXT_HEADING,
+          level: patternResult[1] === '=' ? 1 : 2,
+          raw: trimParagraph(lastBlock.raw.slice(0, -1)),
+          children: new DoublyLinkedList()
+        }
+        lastBlock.raw = ''
+
+        if (refNode) {
+          this._storeCache_front(setextHeadingPattern.lastIndex, headNode)
+          this._idx -= lastBlock.raw.length
+          return refNode
+        } else {
+          this._idx = setextHeadingPattern.lastIndex
+          return headNode
+        }
+      } 
+      
     }
     return null
   }
@@ -674,6 +704,7 @@ export class BlockParser {
     // TODO: identation
     // TODO: multiple empty lines treated as a single blank line?
     // TODO: empty lines ahead
+    // TODO: restore backslash escapes in info string
     const { _raw: raw } = this
     const firstChar = raw.charAt(this._idx)
     const backtickLeadingFencePattern = /(`{3,})[ \t]*([^`]*?)[ \t]*(?:\n|$)/y
@@ -747,7 +778,7 @@ export class BlockParser {
     const block: PontentialParagraph = {
       type: NodeType.POTENTIAL_PARAGRAPH,
       raw: praw,
-      setextLevel: undefined
+      contentBeginIdx: this._idx - praw.length
     }
 
     let backupIdx = this._idx
@@ -760,43 +791,18 @@ export class BlockParser {
       nextBlk = this._nextBlock(contStack)
     }
 
-    let retBlock: BlockNode | null = null
-
-    if (block.setextLevel) {
-      retBlock = {
-        type: NodeType.SETEXT_HEADING,
-        level: block.setextLevel,
-        raw: block.raw
-      } as SetextHeading
-    } else {
-      // if the block is not turned into a setext heading
-      if (block.type === NodeType.POTENTIAL_PARAGRAPH) {
-        // link references
-        const refRes = this.parseLinkRef(block)
-        if (refRes) {
-          this._linkRefs.push(refRes.ref)
-          block.raw = block.raw.slice(refRes.idx)
-        }
-
-        // TODO
-        if (block.raw.length) {
-          retBlock = {
-            type: NodeType.PARAGRAPH,
-            raw: trimParagraph(removeFinalLineBreak(block.raw)),
-            children: new DoublyLinkedList()
-          } as Paragraph
-        }
-      }
-    }
- 
-    if (retBlock) {
+    if (block.raw.length) {
       this._storeCache_front(this._idx, nextBlk)  
       this._idx = backupIdx
-      return retBlock
+      return {
+        type: NodeType.PARAGRAPH,
+        raw: trimParagraph(removeFinalLineBreak(block.raw)),
+        children: new DoublyLinkedList()
+      }
     } else {
-      // pure link reference
       return nextBlk
     }
+    
     
   }
 

@@ -8,7 +8,8 @@ const testDownloadUrl = 'https://spec.commonmark.org/0.30/spec.json'
 const filePath = 'spec.json'
 
 let tc: any = null
-const caseNo = [481]
+const caseNo = [500]
+// const caseNo = [23] // TODO
 // const caseNo = 192 // TODO
 let raw = ''
 // let raw = `- sasa

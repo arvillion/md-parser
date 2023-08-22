@@ -1,7 +1,7 @@
 import { NodeType, ChildrenContainer, InlineNode, Text, Link, Image, LinkType, ImageType, Emphasis, StrongEmphasis } from "./types"
 import { autoLinkRule, htmlInlineRule } from './rules'
 import { DoublyLinkedList, DoublyLinkedListItem, insertAfter, removeItem } from "./DoublyLinkedList"
-import { getEmphasisDelimiterEffect } from "./utils"
+import { ASCIIpunctuations, getEmphasisDelimiterEffect, restoreBackslashEscapes } from "./utils"
 
 type BracketDelimType = '[' | '!['
 type EmphasisDelimType = '*' | '_'
@@ -43,9 +43,13 @@ function skipBlank(raw: string, idx: number) {
   let allowLineBreak = true
   while (idx < raw.length) {
     const ch = raw.charAt(idx)
-    if (ch === ' ' || ch === '\t') continue
+    if (ch === ' ' || ch === '\t') {
+      idx++
+      continue
+    }
     if (ch === '\n' && allowLineBreak) {
       allowLineBreak = false
+      idx++
       continue
     }
     break 
@@ -160,7 +164,15 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
   while (idx < raw.length) {
     const ch = raw.charAt(idx)
     let normal = true
-    if (chBefore !== '\\') {
+    if (chBefore === '\\') {
+      if (ASCIIpunctuations.includes(ch)) {
+        idx--
+        flushText()
+
+        idx++
+        textBeginIdx = idx
+      }
+    } else {
       if (ch === '`') {
         const nextIdx = skipRepeat(raw, idx)
         const backtickLen = nextIdx - idx
@@ -267,6 +279,7 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
                   if (ch === '<') break
                   if (ch === '>') {
                     linkDest = raw.slice(beginIdx + 1, iidx)
+                    linkDest = restoreBackslashEscapes(linkDest)
                     break
                   }
                 }
@@ -274,7 +287,7 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
                 chBefore = ch
               }
 
-              if (linkDest) iidx++
+              if (linkDest !== undefined) iidx++
               else iidx = beginIdx // fail
 
             } else {
@@ -299,6 +312,8 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
               if (!parStack.length && iidx > beginIdx) {
                 // nonempty sequence of characters and balanced parentheses
                 linkDest = raw.slice(beginIdx, iidx)
+                linkDest = restoreBackslashEscapes(linkDest)
+
               } else {
                 // fail
                 iidx = beginIdx
@@ -308,7 +323,7 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
             beginIdx = iidx
             iidx = skipBlank(raw, iidx)
             // link title
-            if (iidx > beginIdx && linkDest) {
+            if (iidx > beginIdx && linkDest !== undefined) {
               const marker = raw.charAt(iidx)
               const markerIdx = iidx
               if (marker === '"' || marker === "'") {
@@ -318,6 +333,7 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
                   const ch = raw.charAt(iidx)
                   if (chBefore !== '\\' && ch === marker) {
                     linkTitle = raw.slice(markerIdx + 1, iidx)
+                    linkTitle = restoreBackslashEscapes(linkTitle)
                     break
                   }
                   iidx++
@@ -332,6 +348,7 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
                     if (ch === '(') break
                     if (ch === ')') {
                       linkTitle = raw.slice(markerIdx + 1, iidx)
+                      linkTitle = restoreBackslashEscapes(linkTitle)
                       break
                     }
                   }
@@ -340,7 +357,7 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
                 }
               }
               
-              if (linkTitle) {
+              if (linkTitle !== undefined) {
                 iidx++
                 iidx = skipBlank(raw, iidx)
               } else {
@@ -432,7 +449,7 @@ export function parseInlines(raw: string, refMap: Record<string, Ref>, container
             removeItem(leftDim.item.textNode)
 
               
-            if (linkLabel) {
+            if (linkLabel !== undefined) {
               nodeList.pushBack({
                 type: linkType,
                 children: processEmphasis(delimsBetween, inlinesBetween),

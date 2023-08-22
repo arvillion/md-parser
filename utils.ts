@@ -2,7 +2,7 @@
 const unicodeWhitespaceRegex = /^[\t\f\r\n\p{Zs}]/u
 
 // An ASCII punctuation character is !, ", #, $, %, &, ', (, ), *, +, ,, -, ., / (U+0021–2F), :, ;, <, =, >, ?, @ (U+003A–0040), [, \, ], ^, _, ` (U+005B–0060), {, |, }, or ~ (U+007B–007E).
-const ASCIIpunctuations = ['!', '"', '#', '$', '%', '&', "'", '(', ')', '*', '+', ',', '-', '.', '/', ':', ';', '<', '=', '>', '?', '@', '[', '\\', ']', '^', '_', '`', '{', '|', '}', '~']
+export const ASCIIpunctuations = ['!', '"', '#', '$', '%', '&', "'", '(', ')', '*', '+', ',', '-', '.', '/', ':', ';', '<', '=', '>', '?', '@', '[', '\\', ']', '^', '_', '`', '{', '|', '}', '~']
 
 // A Unicode punctuation character is an ASCII punctuation character or anything in the general Unicode categories Pc, Pd, Pe, Pf, Pi, Po, or Ps.
 const extraPunctuationRegex = /^[\p{P}]/u
@@ -71,5 +71,10 @@ export function trimParagraph(raw: string) {
  */
 export function removeFinalLineBreak(raw: string) {
   return raw.endsWith('\n') ? raw.slice(0, -1) : raw
+}
+
+const asciiPunctuationRegex = new RegExp(`\\\\([${ASCIIpunctuations.join('')}])`, 'g')
+export function restoreBackslashEscapes(raw: string) {
+  return raw.replace(asciiPunctuationRegex, '$1')
 }
 
